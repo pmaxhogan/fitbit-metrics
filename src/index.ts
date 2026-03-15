@@ -49,30 +49,40 @@ async function getAccessToken(env: Bindings): Promise<string> {
   return data.access_token;
 }
 
+interface StageSummary {
+  count: number;
+  minutes: number;
+  thirtyDayAvgMinutes?: number;
+}
+
 interface FitbitSleepEntry {
   isMainSleep: boolean;
-  duration: number; // milliseconds
+  duration: number;
   efficiency: number;
   minutesAsleep: number;
+  minutesAwake: number;
+  timeInBed: number;
   startTime: string;
   endTime: string;
   dateOfSleep: string;
+  type: "classic" | "stages";
+  levels: {
+    summary: Record<string, StageSummary>;
+  };
 }
 
 interface FitbitSleepResponse {
   sleep: FitbitSleepEntry[];
-  summary: {
-    totalMinutesAsleep: number;
-    totalSleepRecords: number;
-    totalTimeInBed: number;
-  };
 }
 
-async function fetchSleepData(
+const LOOKBACK_DAYS = 30;
+
+async function fetchSleepRange(
   accessToken: string,
-  date: string
+  startDate: string,
+  endDate: string
 ): Promise<FitbitSleepResponse> {
-  const url = `https://api.fitbit.com/1.2/user/-/sleep/date/${date}.json`;
+  const url = `https://api.fitbit.com/1.2/user/-/sleep/date/${startDate}/${endDate}.json`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
@@ -85,38 +95,57 @@ async function fetchSleepData(
   return res.json() as Promise<FitbitSleepResponse>;
 }
 
-function todayDateString(): string {
-  // Fitbit dates are in the user's timezone — using UTC is close enough for daily metrics
+function dateRange(): { start: string; end: string } {
   const now = new Date();
-  return now.toISOString().slice(0, 10);
+  const end = now.toISOString().slice(0, 10);
+  const start = new Date(now.getTime() - LOOKBACK_DAYS * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  return { start, end };
 }
 
-function formatPrometheus(sleep: FitbitSleepResponse, date: string): string {
+function formatPrometheus(data: FitbitSleepResponse): string {
   const lines: string[] = [];
 
-  const mainSleep = sleep.sleep.find((s) => s.isMainSleep);
-  const hoursAsleep = sleep.summary.totalMinutesAsleep / 60;
-  const hoursInBed = sleep.summary.totalTimeInBed / 60;
+  // Only use main sleep entries (skip naps)
+  const mainSleeps = data.sleep.filter((s) => s.isMainSleep);
 
-  lines.push("# HELP fitbit_sleep_hours_asleep Total hours asleep for the night.");
+  lines.push("# HELP fitbit_sleep_hours_asleep Total hours asleep.");
   lines.push("# TYPE fitbit_sleep_hours_asleep gauge");
-  lines.push(`fitbit_sleep_hours_asleep{date="${date}"} ${hoursAsleep.toFixed(2)}`);
+  for (const s of mainSleeps) {
+    lines.push(
+      `fitbit_sleep_hours_asleep{date="${s.dateOfSleep}"} ${(s.minutesAsleep / 60).toFixed(2)}`
+    );
+  }
 
-  lines.push("# HELP fitbit_sleep_hours_in_bed Total hours in bed for the night.");
+  lines.push("# HELP fitbit_sleep_hours_in_bed Total hours in bed.");
   lines.push("# TYPE fitbit_sleep_hours_in_bed gauge");
-  lines.push(`fitbit_sleep_hours_in_bed{date="${date}"} ${hoursInBed.toFixed(2)}`);
+  for (const s of mainSleeps) {
+    lines.push(
+      `fitbit_sleep_hours_in_bed{date="${s.dateOfSleep}"} ${(s.timeInBed / 60).toFixed(2)}`
+    );
+  }
 
   lines.push("# HELP fitbit_sleep_efficiency Sleep efficiency score (0-100).");
   lines.push("# TYPE fitbit_sleep_efficiency gauge");
-  lines.push(
-    `fitbit_sleep_efficiency{date="${date}"} ${mainSleep?.efficiency ?? 0}`
-  );
+  for (const s of mainSleeps) {
+    lines.push(
+      `fitbit_sleep_efficiency{date="${s.dateOfSleep}"} ${s.efficiency}`
+    );
+  }
 
-  lines.push("# HELP fitbit_sleep_records Number of sleep records logged.");
-  lines.push("# TYPE fitbit_sleep_records gauge");
+  // Per-stage minutes (deep, light, rem, wake for stages; asleep, restless, awake for classic)
   lines.push(
-    `fitbit_sleep_records{date="${date}"} ${sleep.summary.totalSleepRecords}`
+    "# HELP fitbit_sleep_stage_minutes Minutes spent in each sleep stage."
   );
+  lines.push("# TYPE fitbit_sleep_stage_minutes gauge");
+  for (const s of mainSleeps) {
+    for (const [stage, info] of Object.entries(s.levels.summary)) {
+      lines.push(
+        `fitbit_sleep_stage_minutes{date="${s.dateOfSleep}",stage="${stage}"} ${info.minutes}`
+      );
+    }
+  }
 
   lines.push("");
   return lines.join("\n");
@@ -182,9 +211,9 @@ app.use("/callback", async (c, next) => {
 app.get("/metrics", async (c) => {
   try {
     const accessToken = await getAccessToken(c.env);
-    const date = todayDateString();
-    const sleep = await fetchSleepData(accessToken, date);
-    const body = formatPrometheus(sleep, date);
+    const { start, end } = dateRange();
+    const sleep = await fetchSleepRange(accessToken, start, end);
+    const body = formatPrometheus(sleep);
     return c.text(body, 200, {
       "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
     });
