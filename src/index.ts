@@ -122,14 +122,28 @@ function formatPrometheus(sleep: FitbitSleepResponse, date: string): string {
   return lines.join("\n");
 }
 
-// --- Auth middleware for /metrics ---
-app.get("/metrics", async (c) => {
+// --- Bearer auth middleware for all sensitive routes ---
+import type { MiddlewareHandler } from "hono";
+
+const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
   const authHeader = c.req.header("Authorization");
-  const expected = `Bearer ${c.env.METRICS_AUTH_TOKEN}`;
-  if (!authHeader || authHeader !== expected) {
+  const queryToken = c.req.query("token");
+  const expected = c.env.METRICS_AUTH_TOKEN;
+
+  const authorized =
+    authHeader === `Bearer ${expected}` || queryToken === expected;
+
+  if (!authorized) {
     return c.text("Unauthorized\n", 401);
   }
+  await next();
+};
 
+app.use("/metrics", requireAuth);
+app.use("/authorize", requireAuth);
+app.use("/callback", requireAuth);
+
+app.get("/metrics", async (c) => {
   try {
     const accessToken = await getAccessToken(c.env);
     const date = todayDateString();
