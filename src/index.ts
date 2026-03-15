@@ -75,7 +75,7 @@ interface FitbitSleepResponse {
   sleep: FitbitSleepEntry[];
 }
 
-const LOOKBACK_DAYS = 30;
+const LOOKBACK_DAYS = 90;
 
 async function fetchSleepRange(
   accessToken: string,
