@@ -125,23 +125,59 @@ function formatPrometheus(sleep: FitbitSleepResponse, date: string): string {
 // --- Bearer auth middleware for all sensitive routes ---
 import type { MiddlewareHandler } from "hono";
 
+const encoder = new TextEncoder();
+
+function timingSafeEqual(a: string, b: string): boolean {
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+  if (bufA.byteLength !== bufB.byteLength) {
+    // Compare against self to burn constant time, then return false
+    crypto.subtle.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.subtle.timingSafeEqual(bufA, bufB);
+}
+
+function checkToken(provided: string | undefined, expected: string): boolean {
+  if (!provided) return false;
+  return timingSafeEqual(provided, expected);
+}
+
 const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
   const authHeader = c.req.header("Authorization");
   const queryToken = c.req.query("token");
   const expected = c.env.METRICS_AUTH_TOKEN;
 
-  const authorized =
-    authHeader === `Bearer ${expected}` || queryToken === expected;
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : undefined;
 
-  if (!authorized) {
+  if (checkToken(bearerToken, expected) || checkToken(queryToken, expected)) {
+    await next();
+  } else {
     return c.text("Unauthorized\n", 401);
   }
-  await next();
 };
 
+app.use("/", requireAuth);
 app.use("/metrics", requireAuth);
 app.use("/authorize", requireAuth);
-app.use("/callback", requireAuth);
+// --- Callback: auth comes via the state param Fitbit echoes back ---
+app.use("/callback", async (c, next) => {
+  const authHeader = c.req.header("Authorization");
+  const stateToken = c.req.query("state");
+  const expected = c.env.METRICS_AUTH_TOKEN;
+
+  const bearerToken = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : undefined;
+
+  if (checkToken(bearerToken, expected) || checkToken(stateToken, expected)) {
+    await next();
+  } else {
+    return c.text("Unauthorized\n", 401);
+  }
+});
 
 app.get("/metrics", async (c) => {
   try {
@@ -207,11 +243,13 @@ app.get("/callback", async (c) => {
 // --- Kick off the OAuth2 flow ---
 app.get("/authorize", (c) => {
   const redirectUri = new URL("/callback", c.req.url).toString();
+  const token = c.req.query("token") ?? "";
   const params = new URLSearchParams({
     response_type: "code",
     client_id: c.env.FITBIT_CLIENT_ID,
     redirect_uri: redirectUri,
     scope: "sleep",
+    state: token,
   });
   return c.redirect(`https://www.fitbit.com/oauth2/authorize?${params}`);
 });
