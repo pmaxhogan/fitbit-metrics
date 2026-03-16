@@ -6,6 +6,9 @@ import {
   FitbitSpO2Response,
   FitbitBreathingRateResponse,
   FitbitStepsResponse,
+  FitbitCaloriesResponse,
+  FitbitDistanceResponse,
+  FitbitFloorsResponse,
 } from "./fitbit";
 
 export function formatPrometheus(
@@ -16,6 +19,9 @@ export function formatPrometheus(
   spo2Data: FitbitSpO2Response,
   brData: FitbitBreathingRateResponse,
   stepsData: FitbitStepsResponse,
+  caloriesData: FitbitCaloriesResponse,
+  distanceData: FitbitDistanceResponse,
+  floorsData: FitbitFloorsResponse,
 ): string {
   const lines: string[] = [];
 
@@ -109,6 +115,31 @@ export function formatPrometheus(
   lines.push("# TYPE fitbit_steps gauge");
   for (const entry of stepsData["activities-steps"]) {
     lines.push(`fitbit_steps{date="${entry.dateTime}"} ${entry.value}`);
+  }
+
+  lines.push("# HELP fitbit_calories Daily calories burned.");
+  lines.push("# TYPE fitbit_calories gauge");
+  for (const entry of caloriesData["activities-calories"]) {
+    lines.push(`fitbit_calories{date="${entry.dateTime}"} ${entry.value}`);
+  }
+
+  lines.push("# HELP fitbit_distance Daily distance traveled (km).");
+  lines.push("# TYPE fitbit_distance gauge");
+  for (const entry of distanceData["activities-distance"]) {
+    lines.push(`fitbit_distance{date="${entry.dateTime}"} ${entry.value}`);
+  }
+
+  lines.push("# HELP fitbit_distance_mi Daily distance traveled (miles).");
+  lines.push("# TYPE fitbit_distance_mi gauge");
+  for (const entry of distanceData["activities-distance"]) {
+    const mi = (parseFloat(entry.value) * 0.621371).toFixed(2);
+    lines.push(`fitbit_distance_mi{date="${entry.dateTime}"} ${mi}`);
+  }
+
+  lines.push("# HELP fitbit_floors Daily floors climbed.");
+  lines.push("# TYPE fitbit_floors gauge");
+  for (const entry of floorsData["activities-floors"]) {
+    lines.push(`fitbit_floors{date="${entry.dateTime}"} ${entry.value}`);
   }
 
   lines.push("");

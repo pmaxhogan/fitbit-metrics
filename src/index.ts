@@ -8,11 +8,14 @@ import {
   fetchSpO2Range,
   fetchBreathingRateRange,
   fetchStepsRange,
+  fetchCaloriesRange,
+  fetchDistanceRange,
+  fetchFloorsRange,
 } from "./fitbit";
 import { formatPrometheus } from "./prom";
 import { exchangeAuthCode, getAccessToken } from "./fitbit-auth";
 import { type Bindings } from "./consts";
-import { dateRange } from "./utils";
+import { dateRange, pooled } from "./utils";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
@@ -78,16 +81,19 @@ app.get("/metrics", async (c) => {
     const accessToken = await getAccessToken(c.env);
     const { start, end } = dateRange();
     const kv = c.env.FITBIT_KV;
-    const [sleep, heartRate, hrv, tempSkin, spo2, br, steps] = await Promise.all([
-      fetchSleepRange(kv, accessToken, start, end),
-      fetchHeartRateRange(kv, accessToken, start, end),
-      fetchHrvRange(kv, accessToken, start, end),
-      fetchTempSkinRange(kv, accessToken, start, end),
-      fetchSpO2Range(kv, accessToken, start, end),
-      fetchBreathingRateRange(kv, accessToken, start, end),
-      fetchStepsRange(kv, accessToken, start, end),
+    const [sleep, heartRate, hrv, tempSkin, spo2, br, steps, calories, distance, floors] = await pooled<any>([
+      () => fetchSleepRange(kv, accessToken, start, end),
+      () => fetchHeartRateRange(kv, accessToken, start, end),
+      () => fetchHrvRange(kv, accessToken, start, end),
+      () => fetchTempSkinRange(kv, accessToken, start, end),
+      () => fetchSpO2Range(kv, accessToken, start, end),
+      () => fetchBreathingRateRange(kv, accessToken, start, end),
+      () => fetchStepsRange(kv, accessToken, start, end),
+      () => fetchCaloriesRange(kv, accessToken, start, end),
+      () => fetchDistanceRange(kv, accessToken, start, end),
+      () => fetchFloorsRange(kv, accessToken, start, end),
     ]);
-    const body = formatPrometheus(sleep, heartRate, hrv, tempSkin, spo2, br, steps);
+    const body = formatPrometheus(sleep, heartRate, hrv, tempSkin, spo2, br, steps, calories, distance, floors);
     return c.text(body, 200, {
       "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
     });

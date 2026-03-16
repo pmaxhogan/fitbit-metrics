@@ -1,15 +1,7 @@
 // --- Bindings type (shared) ---
 
-import {
-  KV_REFRESH_TOKEN_KEY,
-  FITBIT_TOKEN_URL,
-  MAX_CONCURRENCY,
-  MAX_RETRIES,
-  CACHE_TTL_SECONDS,
-  LOOKBACK_DAYS,
-  DATE_CHUNK_LIMIT,
-} from "./consts";
-import { dateChunks } from "./utils";
+import { MAX_RETRIES, CACHE_TTL_SECONDS, DATE_CHUNK_LIMIT } from "./consts";
+import { dateChunks, pooled } from "./utils";
 
 // --- Response types ---
 
@@ -104,21 +96,22 @@ export interface FitbitStepsResponse {
   "activities-steps": FitbitStepsEntry[];
 }
 
-// --- Concurrency-limited pool ---
+// Generic activity timeseries entry (steps, calories, distance, floors all share this shape)
+export interface FitbitActivityTimeseriesEntry {
+  dateTime: string;
+  value: string;
+}
 
-async function pooled<T>(tasks: (() => Promise<T>)[], concurrency = MAX_CONCURRENCY): Promise<T[]> {
-  const results: T[] = new Array(tasks.length);
-  let idx = 0;
+export interface FitbitCaloriesResponse {
+  "activities-calories": FitbitActivityTimeseriesEntry[];
+}
 
-  async function worker() {
-    while (idx < tasks.length) {
-      const i = idx++;
-      results[i] = await tasks[i]();
-    }
-  }
+export interface FitbitDistanceResponse {
+  "activities-distance": FitbitActivityTimeseriesEntry[];
+}
 
-  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()));
-  return results;
+export interface FitbitFloorsResponse {
+  "activities-floors": FitbitActivityTimeseriesEntry[];
 }
 
 // --- Fitbit API wrapper: caching, 429 backoff, rate-limit awareness, logging ---
@@ -250,6 +243,33 @@ export async function fetchStepsRange(
   endDate: string,
 ): Promise<FitbitStepsResponse> {
   return fitbitApi<FitbitStepsResponse>(kv, accessToken, `/1/user/-/activities/steps/date/${startDate}/${endDate}.json`);
+}
+
+export async function fetchCaloriesRange(
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<FitbitCaloriesResponse> {
+  return fitbitApi<FitbitCaloriesResponse>(kv, accessToken, `/1/user/-/activities/calories/date/${startDate}/${endDate}.json`);
+}
+
+export async function fetchDistanceRange(
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<FitbitDistanceResponse> {
+  return fitbitApi<FitbitDistanceResponse>(kv, accessToken, `/1/user/-/activities/distance/date/${startDate}/${endDate}.json`);
+}
+
+export async function fetchFloorsRange(
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<FitbitFloorsResponse> {
+  return fitbitApi<FitbitFloorsResponse>(kv, accessToken, `/1/user/-/activities/floors/date/${startDate}/${endDate}.json`);
 }
 
 // Breathing rate — 30-day max range, chunk like HRV
