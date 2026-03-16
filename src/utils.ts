@@ -15,7 +15,9 @@ export function dateChunks(startDate: string, endDate: string, maxDays: number):
 
 export function dateRange(): { start: string; end: string } {
   const now = new Date();
-  const end = now.toISOString().slice(0, 10);
-  const start = new Date(now.getTime() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+  // Use yesterday as end date to avoid incomplete/future days from UTC offset
+  const yesterday = new Date(now.getTime() - 86400000);
+  const end = yesterday.toISOString().slice(0, 10);
+  const start = new Date(yesterday.getTime() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
   return { start, end };
 }
