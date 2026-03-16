@@ -10,6 +10,5 @@ export type Bindings = {
   FITBIT_KV: KVNamespace;
   FITBIT_CLIENT_ID: string;
   FITBIT_CLIENT_SECRET: string;
-  FITBIT_INITIAL_REFRESH_TOKEN: string;
   METRICS_AUTH_TOKEN: string;
 };

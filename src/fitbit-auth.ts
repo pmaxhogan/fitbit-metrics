@@ -1,9 +1,10 @@
-// --- Token management ---
-
 import { type Bindings, KV_REFRESH_TOKEN_KEY, FITBIT_TOKEN_URL } from "./consts";
 
 export async function getAccessToken(env: Bindings): Promise<string> {
-  const refreshToken = (await env.FITBIT_KV.get(KV_REFRESH_TOKEN_KEY)) ?? env.FITBIT_INITIAL_REFRESH_TOKEN;
+  const refreshToken = await env.FITBIT_KV.get(KV_REFRESH_TOKEN_KEY);
+  if (!refreshToken) {
+    throw new Error("No refresh token in KV. Authorize via /authorize first.");
+  }
 
   const basicAuth = btoa(`${env.FITBIT_CLIENT_ID}:${env.FITBIT_CLIENT_SECRET}`);
 

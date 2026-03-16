@@ -1,8 +1,6 @@
 import { MAX_RETRIES, CACHE_TTL_SECONDS, DATE_CHUNK_LIMIT } from "./consts";
 import { dateChunks, pooled } from "./utils";
 
-// --- Response types ---
-
 export interface StageSummary {
   count: number;
   minutes: number;
