@@ -6,7 +6,6 @@ export const CACHE_TTL_SECONDS = 12 * 60 * 60; // 12 hours
 export const MAX_RETRIES = 4;
 export const MAX_CONCURRENCY = 6; // Workers limit: 6 simultaneous outgoing connections
 
-
 export type Bindings = {
   FITBIT_KV: KVNamespace;
   FITBIT_CLIENT_ID: string;

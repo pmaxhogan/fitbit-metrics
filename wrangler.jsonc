@@ -3,22 +3,20 @@
  * https://developers.cloudflare.com/workers/wrangler/configuration/
  */
 {
-	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "fitbit-metrics",
-	"main": "src/index.ts",
-	"compatibility_date": "2026-03-10",
-	"observability": {
-		"enabled": true
-	},
-	"compatibility_flags": [
-		"nodejs_compat"
-	],
-	// KV namespace for storing the rotating Fitbit refresh token
-	"kv_namespaces": [
-		{
-			"binding": "FITBIT_KV",
-			"id": "8b9b3eca68994bbbabfff91f94a37b0b",
-			"remote": true
-		}
-	]
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fitbit-metrics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-10",
+  "observability": {
+    "enabled": true,
+  },
+  "compatibility_flags": ["nodejs_compat"],
+  // KV namespace for storing the rotating Fitbit refresh token
+  "kv_namespaces": [
+    {
+      "binding": "FITBIT_KV",
+      "id": "8b9b3eca68994bbbabfff91f94a37b0b",
+      "remote": true,
+    },
+  ],
 }

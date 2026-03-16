@@ -7,6 +7,7 @@ import {
   fetchTempSkinRange,
   fetchSpO2Range,
   fetchBreathingRateRange,
+  fetchStepsRange,
 } from "./fitbit";
 import { formatPrometheus } from "./prom";
 import { exchangeAuthCode, getAccessToken } from "./fitbit-auth";
@@ -39,9 +40,7 @@ const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) =
   const queryToken = c.req.query("token");
   const expected = c.env.METRICS_AUTH_TOKEN;
 
-  const bearerToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : undefined;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
   if (checkToken(bearerToken, expected) || checkToken(queryToken, expected)) {
     await next();
@@ -63,9 +62,7 @@ app.use("/callback", async (c, next) => {
   const stateToken = c.req.query("state");
   const expected = c.env.METRICS_AUTH_TOKEN;
 
-  const bearerToken = authHeader?.startsWith("Bearer ")
-    ? authHeader.slice(7)
-    : undefined;
+  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
   if (checkToken(bearerToken, expected) || checkToken(stateToken, expected)) {
     await next();
@@ -81,15 +78,16 @@ app.get("/metrics", async (c) => {
     const accessToken = await getAccessToken(c.env);
     const { start, end } = dateRange();
     const kv = c.env.FITBIT_KV;
-    const [sleep, heartRate, hrv, tempSkin, spo2, br] = await Promise.all([
+    const [sleep, heartRate, hrv, tempSkin, spo2, br, steps] = await Promise.all([
       fetchSleepRange(kv, accessToken, start, end),
       fetchHeartRateRange(kv, accessToken, start, end),
       fetchHrvRange(kv, accessToken, start, end),
       fetchTempSkinRange(kv, accessToken, start, end),
       fetchSpO2Range(kv, accessToken, start, end),
       fetchBreathingRateRange(kv, accessToken, start, end),
+      fetchStepsRange(kv, accessToken, start, end),
     ]);
-    const body = formatPrometheus(sleep, heartRate, hrv, tempSkin, spo2, br);
+    const body = formatPrometheus(sleep, heartRate, hrv, tempSkin, spo2, br, steps);
     return c.text(body, 200, {
       "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
     });
@@ -116,9 +114,7 @@ app.get("/callback", async (c) => {
     return c.text(message, 502);
   }
 
-  return c.text(
-    "Fitbit authorization complete. Refresh token stored. You can close this tab."
-  );
+  return c.text("Fitbit authorization complete. Refresh token stored. You can close this tab.");
 });
 
 app.get("/authorize", (c) => {
@@ -128,7 +124,7 @@ app.get("/authorize", (c) => {
     response_type: "code",
     client_id: c.env.FITBIT_CLIENT_ID,
     redirect_uri: redirectUri,
-    scope: "sleep heartrate temperature oxygen_saturation respiratory_rate",
+    scope: "sleep heartrate temperature oxygen_saturation respiratory_rate activity",
     state: token,
   });
   return c.redirect(`https://www.fitbit.com/oauth2/authorize?${params}`);

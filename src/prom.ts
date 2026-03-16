@@ -1,4 +1,12 @@
-import { FitbitSleepResponse, FitbitHeartRateResponse, FitbitHrvResponse, FitbitTempSkinResponse, FitbitSpO2Response, FitbitBreathingRateResponse } from "./fitbit";
+import {
+  FitbitSleepResponse,
+  FitbitHeartRateResponse,
+  FitbitHrvResponse,
+  FitbitTempSkinResponse,
+  FitbitSpO2Response,
+  FitbitBreathingRateResponse,
+  FitbitStepsResponse,
+} from "./fitbit";
 
 export function formatPrometheus(
   sleepData: FitbitSleepResponse,
@@ -6,7 +14,8 @@ export function formatPrometheus(
   hrvData: FitbitHrvResponse,
   tempSkinData: FitbitTempSkinResponse,
   spo2Data: FitbitSpO2Response,
-  brData: FitbitBreathingRateResponse
+  brData: FitbitBreathingRateResponse,
+  stepsData: FitbitStepsResponse,
 ): string {
   const lines: string[] = [];
 
@@ -15,17 +24,13 @@ export function formatPrometheus(
   lines.push("# HELP fitbit_sleep_hours_asleep Total hours asleep.");
   lines.push("# TYPE fitbit_sleep_hours_asleep gauge");
   for (const s of mainSleeps) {
-    lines.push(
-      `fitbit_sleep_hours_asleep{date="${s.dateOfSleep}"} ${(s.minutesAsleep / 60).toFixed(2)}`
-    );
+    lines.push(`fitbit_sleep_hours_asleep{date="${s.dateOfSleep}"} ${(s.minutesAsleep / 60).toFixed(2)}`);
   }
 
   lines.push("# HELP fitbit_sleep_hours_in_bed Total hours in bed.");
   lines.push("# TYPE fitbit_sleep_hours_in_bed gauge");
   for (const s of mainSleeps) {
-    lines.push(
-      `fitbit_sleep_hours_in_bed{date="${s.dateOfSleep}"} ${(s.timeInBed / 60).toFixed(2)}`
-    );
+    lines.push(`fitbit_sleep_hours_in_bed{date="${s.dateOfSleep}"} ${(s.timeInBed / 60).toFixed(2)}`);
   }
 
   lines.push("# HELP fitbit_sleep_efficiency Sleep efficiency score (0-100).");
@@ -38,9 +43,7 @@ export function formatPrometheus(
   lines.push("# TYPE fitbit_sleep_stage_minutes gauge");
   for (const s of mainSleeps) {
     for (const [stage, info] of Object.entries(s.levels.summary)) {
-      lines.push(
-        `fitbit_sleep_stage_minutes{date="${s.dateOfSleep}",stage="${stage}"} ${info.minutes}`
-      );
+      lines.push(`fitbit_sleep_stage_minutes{date="${s.dateOfSleep}",stage="${stage}"} ${info.minutes}`);
     }
   }
 
@@ -48,9 +51,7 @@ export function formatPrometheus(
   lines.push("# TYPE fitbit_resting_heart_rate gauge");
   for (const entry of heartData["activities-heart"]) {
     if (entry.value.restingHeartRate != null) {
-      lines.push(
-        `fitbit_resting_heart_rate{date="${entry.dateTime}"} ${entry.value.restingHeartRate}`
-      );
+      lines.push(`fitbit_resting_heart_rate{date="${entry.dateTime}"} ${entry.value.restingHeartRate}`);
     }
   }
 
@@ -58,9 +59,7 @@ export function formatPrometheus(
   lines.push("# TYPE fitbit_heart_rate_zone_minutes gauge");
   for (const entry of heartData["activities-heart"]) {
     for (const zone of entry.value.heartRateZones) {
-      lines.push(
-        `fitbit_heart_rate_zone_minutes{date="${entry.dateTime}",zone="${zone.name}"} ${zone.minutes}`
-      );
+      lines.push(`fitbit_heart_rate_zone_minutes{date="${entry.dateTime}",zone="${zone.name}"} ${zone.minutes}`);
     }
   }
 
@@ -79,9 +78,7 @@ export function formatPrometheus(
   lines.push("# HELP fitbit_skin_temp_nightly_relative Nightly skin temperature deviation from baseline (C).");
   lines.push("# TYPE fitbit_skin_temp_nightly_relative gauge");
   for (const entry of tempSkinData.tempSkin) {
-    lines.push(
-      `fitbit_skin_temp_nightly_relative{date="${entry.dateTime}"} ${entry.value.nightlyRelative}`
-    );
+    lines.push(`fitbit_skin_temp_nightly_relative{date="${entry.dateTime}"} ${entry.value.nightlyRelative}`);
   }
 
   lines.push("# HELP fitbit_spo2_avg Average SpO2 percentage.");
@@ -106,6 +103,12 @@ export function formatPrometheus(
   lines.push("# TYPE fitbit_breathing_rate gauge");
   for (const entry of brData.br) {
     lines.push(`fitbit_breathing_rate{date="${entry.dateTime}"} ${entry.value.breathingRate}`);
+  }
+
+  lines.push("# HELP fitbit_steps Daily step count.");
+  lines.push("# TYPE fitbit_steps gauge");
+  for (const entry of stepsData["activities-steps"]) {
+    lines.push(`fitbit_steps{date="${entry.dateTime}"} ${entry.value}`);
   }
 
   lines.push("");

@@ -1,8 +1,15 @@
 // --- Bindings type (shared) ---
 
-import { KV_REFRESH_TOKEN_KEY, FITBIT_TOKEN_URL, MAX_CONCURRENCY, MAX_RETRIES, CACHE_TTL_SECONDS, LOOKBACK_DAYS, DATE_CHUNK_LIMIT } from "./consts";
+import {
+  KV_REFRESH_TOKEN_KEY,
+  FITBIT_TOKEN_URL,
+  MAX_CONCURRENCY,
+  MAX_RETRIES,
+  CACHE_TTL_SECONDS,
+  LOOKBACK_DAYS,
+  DATE_CHUNK_LIMIT,
+} from "./consts";
 import { dateChunks } from "./utils";
-
 
 // --- Response types ---
 
@@ -110,19 +117,13 @@ async function pooled<T>(tasks: (() => Promise<T>)[], concurrency = MAX_CONCURRE
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker())
-  );
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()));
   return results;
 }
 
 // --- Fitbit API wrapper: caching, 429 backoff, rate-limit awareness, logging ---
 
-async function fitbitApi<T>(
-  kv: KVNamespace,
-  accessToken: string,
-  path: string
-): Promise<T> {
+async function fitbitApi<T>(kv: KVNamespace, accessToken: string, path: string): Promise<T> {
   const cacheKey = `fitbit_cache:${path}`;
 
   const cached = await kv.get(cacheKey);
@@ -144,15 +145,11 @@ async function fitbitApi<T>(
     const resetSecs = res.headers.get("Fitbit-Rate-Limit-Reset");
     const ratePart = remaining !== null ? ` [remaining=${remaining} reset=${resetSecs}s]` : "";
 
-    console.log(
-      `[fitbit] ${path} -> ${res.status}${attempt > 0 ? ` (attempt ${attempt + 1})` : ""}${ratePart}`
-    );
+    console.log(`[fitbit] ${path} -> ${res.status}${attempt > 0 ? ` (attempt ${attempt + 1})` : ""}${ratePart}`);
 
     if (res.status === 429) {
       // Prefer Fitbit-Rate-Limit-Reset (seconds until quota resets at top of hour)
-      const waitMs = resetSecs
-        ? parseInt(resetSecs, 10) * 1000
-        : 1000 * 2 ** attempt;
+      const waitMs = resetSecs ? parseInt(resetSecs, 10) * 1000 : 1000 * 2 ** attempt;
       console.log(`[fitbit] 429 on ${path}, waiting ${(waitMs / 1000).toFixed(0)}s for rate limit reset`);
       await new Promise((r) => setTimeout(r, waitMs));
       continue;
@@ -186,69 +183,89 @@ async function fitbitApi<T>(
 
 // --- Date helpers ---
 
-
 // --- Typed fetch functions ---
 
 export async function fetchSleepRange(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
 ): Promise<FitbitSleepResponse> {
-  return fitbitApi<FitbitSleepResponse>(
-    kv, accessToken, `/1.2/user/-/sleep/date/${startDate}/${endDate}.json`
-  );
+  return fitbitApi<FitbitSleepResponse>(kv, accessToken, `/1.2/user/-/sleep/date/${startDate}/${endDate}.json`);
 }
 
 export async function fetchHeartRateRange(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
 ): Promise<FitbitHeartRateResponse> {
-  return fitbitApi<FitbitHeartRateResponse>(
-    kv, accessToken, `/1/user/-/activities/heart/date/${startDate}/${endDate}.json`
-  );
+  return fitbitApi<FitbitHeartRateResponse>(kv, accessToken, `/1/user/-/activities/heart/date/${startDate}/${endDate}.json`);
 }
 
-export async function fetchHrvRange(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
-): Promise<FitbitHrvResponse> {
+export async function fetchHrvRange(kv: KVNamespace, accessToken: string, startDate: string, endDate: string): Promise<FitbitHrvResponse> {
   const chunks = dateChunks(startDate, endDate, DATE_CHUNK_LIMIT);
   const results = await pooled(
-    chunks.map(([s, e]) => () =>
-      fitbitApi<FitbitHrvResponse>(kv, accessToken, `/1/user/-/hrv/date/${s}/${e}.json`)
-    )
+    chunks.map(
+      ([s, e]) =>
+        () =>
+          fitbitApi<FitbitHrvResponse>(kv, accessToken, `/1/user/-/hrv/date/${s}/${e}.json`),
+    ),
   );
   return { hrv: results.flatMap((r) => r.hrv) };
 }
 
 // Skin temp API supports date ranges with a 30-day max — chunk like HRV
 export async function fetchTempSkinRange(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
 ): Promise<FitbitTempSkinResponse> {
   const chunks = dateChunks(startDate, endDate, DATE_CHUNK_LIMIT);
   const results = await pooled(
-    chunks.map(([s, e]) => () =>
-      fitbitApi<FitbitTempSkinResponse>(kv, accessToken, `/1/user/-/temp/skin/date/${s}/${e}.json`)
-    )
+    chunks.map(
+      ([s, e]) =>
+        () =>
+          fitbitApi<FitbitTempSkinResponse>(kv, accessToken, `/1/user/-/temp/skin/date/${s}/${e}.json`),
+    ),
   );
   return { tempSkin: results.flatMap((r) => r.tempSkin) };
 }
 
 // SpO2 range endpoint — no range limit, returns raw array
 export async function fetchSpO2Range(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
 ): Promise<FitbitSpO2Response> {
-  return fitbitApi<FitbitSpO2Response>(
-    kv, accessToken, `/1/user/-/spo2/date/${startDate}/${endDate}.json`
-  );
+  return fitbitApi<FitbitSpO2Response>(kv, accessToken, `/1/user/-/spo2/date/${startDate}/${endDate}.json`);
+}
+
+export async function fetchStepsRange(
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
+): Promise<FitbitStepsResponse> {
+  return fitbitApi<FitbitStepsResponse>(kv, accessToken, `/1/user/-/activities/steps/date/${startDate}/${endDate}.json`);
 }
 
 // Breathing rate — 30-day max range, chunk like HRV
 export async function fetchBreathingRateRange(
-  kv: KVNamespace, accessToken: string, startDate: string, endDate: string
+  kv: KVNamespace,
+  accessToken: string,
+  startDate: string,
+  endDate: string,
 ): Promise<FitbitBreathingRateResponse> {
   const chunks = dateChunks(startDate, endDate, DATE_CHUNK_LIMIT);
   const results = await pooled(
-    chunks.map(([s, e]) => () =>
-      fitbitApi<FitbitBreathingRateResponse>(kv, accessToken, `/1/user/-/br/date/${s}/${e}.json`)
-    )
+    chunks.map(
+      ([s, e]) =>
+        () =>
+          fitbitApi<FitbitBreathingRateResponse>(kv, accessToken, `/1/user/-/br/date/${s}/${e}.json`),
+    ),
   );
   return { br: results.flatMap((r) => r.br) };
 }
-
