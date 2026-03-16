@@ -1,8 +1,6 @@
 // --- Token management ---
 
-import type { MiddlewareHandler } from "hono";
-import { type Bindings } from "./consts";
-import { KV_REFRESH_TOKEN_KEY, FITBIT_TOKEN_URL } from "./consts";
+import { type Bindings, KV_REFRESH_TOKEN_KEY, FITBIT_TOKEN_URL } from "./consts";
 
 export async function getAccessToken(env: Bindings): Promise<string> {
   const refreshToken = (await env.FITBIT_KV.get(KV_REFRESH_TOKEN_KEY)) ?? env.FITBIT_INITIAL_REFRESH_TOKEN;

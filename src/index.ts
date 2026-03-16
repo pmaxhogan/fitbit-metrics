@@ -19,8 +19,6 @@ import { dateRange, pooled } from "./utils";
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// --- Auth helpers ---
-
 const encoder = new TextEncoder();
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -53,9 +51,6 @@ const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) =
 };
 
 app.use("/purge", requireAuth);
-
-// --- Middleware ---
-
 app.use("/", requireAuth);
 app.use("/metrics", requireAuth);
 app.use("/authorize", requireAuth);
@@ -73,8 +68,6 @@ app.use("/callback", async (c, next) => {
     return c.text("Unauthorized\n", 401);
   }
 });
-
-// --- Routes ---
 
 app.get("/metrics", async (c) => {
   try {
