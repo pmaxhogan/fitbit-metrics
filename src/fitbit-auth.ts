@@ -1,7 +1,7 @@
-import { type Bindings, KV_REFRESH_TOKEN_KEY, FITBIT_TOKEN_URL } from "./consts";
+import { kvKey, FITBIT_TOKEN_URL } from "./consts";
 
-export async function getAccessToken(env: Bindings): Promise<string> {
-  const refreshToken = await env.FITBIT_KV.get(KV_REFRESH_TOKEN_KEY);
+export async function getAccessToken(env: Env, userId: string): Promise<string> {
+  const refreshToken = await env.FITBIT_KV.get(kvKey.refreshToken(userId));
   if (!refreshToken) {
     throw new Error("No refresh token in KV. Authorize via /authorize first.");
   }
@@ -30,11 +30,11 @@ export async function getAccessToken(env: Bindings): Promise<string> {
     refresh_token: string;
   };
 
-  await env.FITBIT_KV.put(KV_REFRESH_TOKEN_KEY, data.refresh_token);
+  await env.FITBIT_KV.put(kvKey.refreshToken(userId), data.refresh_token);
   return data.access_token;
 }
 
-export async function exchangeAuthCode(env: Bindings, code: string, redirectUri: string): Promise<void> {
+export async function exchangeAuthCode(env: Env, userId: string, code: string, redirectUri: string): Promise<void> {
   const basicAuth = btoa(`${env.FITBIT_CLIENT_ID}:${env.FITBIT_CLIENT_SECRET}`);
 
   const res = await fetch(FITBIT_TOKEN_URL, {
@@ -60,5 +60,5 @@ export async function exchangeAuthCode(env: Bindings, code: string, redirectUri:
     refresh_token: string;
   };
 
-  await env.FITBIT_KV.put(KV_REFRESH_TOKEN_KEY, data.refresh_token);
+  await env.FITBIT_KV.put(kvKey.refreshToken(userId), data.refresh_token);
 }

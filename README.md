@@ -1,21 +1,52 @@
-# fitbit-metrics
+# fitbit-metrics`.maxhogan.dev`
 
-Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/metrics` endpoint. Built with [Hono](https://hono.dev/).
+Convert Fitbit health data into Prometheus metrics.
 
-## Metrics exposed
+Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/metrics` endpoint. Built with [Hono](https://hono.dev/) + TS.
 
-Sleep (hours, efficiency, stages), resting heart rate, HR zones, HRV (daily + deep RMSSD), skin temperature, SpO2, breathing rate, steps, calories, distance, floors.
+## Requirements
+
+1. Prometheus
+2. A Fitbit account
+
+## Steps
+
+1. [Authorize](/authorize) this app with your Fitbit account
+2. Save the API token returned from step 1
+3. Configure your Prometheus server to scrape `/metrics` using your saved API token (using `Authorization: Bearer abcd1234-...` header or `?token=abcd1234-...`)
+
+```yaml
+- job_name: fitbit
+  scrape_interval: 15m
+  scheme: https
+  authorization:
+    type: Bearer
+    credentials: "abcd1234-..."
+  static_configs:
+    - targets: ["fitbit-metrics.maxhogan.dev"]
+```
+
+## Links
+
+- [Authorize with Fitbit](/authorize)
+- [API Reference](/reference) ([OpenAPI](/doc))
+- [GitHub](https://github.com/pmaxhogan/fitbit-metrics)
+- [My Website](https://maxhogan.dev)
+
+---
+
+# Development
 
 ## Routes
 
-| Route | Description |
-|---|---|
-| `GET /metrics` | Prometheus scrape endpoint |
-| `GET /authorize` | Starts Fitbit OAuth2 flow |
-| `GET /callback` | OAuth2 callback |
-| `GET /purge` | Clears the KV response cache |
-
-All routes require a bearer token or `?token=` query param matching `METRICS_AUTH_TOKEN`.
+| Route            | Auth      | Description                                   |
+| ---------------- | --------- | --------------------------------------------- |
+| `GET /authorize` | None      | Starts Fitbit OAuth2 flow                     |
+| `GET /callback`  | Via state | OAuth2 callback, returns your API token       |
+| `GET /metrics`   | Bearer    | Prometheus scrape endpoint                    |
+| `GET /purge`     | Bearer    | Clears the KV response cache for your account |
+| `GET /doc`       | None      | OpenAPI 3.0 JSON spec                         |
+| `GET /reference` | None      | Scalar API reference UI                       |
 
 ## Setup
 
@@ -23,25 +54,17 @@ All routes require a bearer token or `?token=` query param matching `METRICS_AUT
 npm install
 ```
 
-### Secrets / env vars
+### Secrets
 
-| Variable | Description |
-|---|---|
-| `FITBIT_CLIENT_ID` | Fitbit app client ID |
+| Variable               | Description              |
+| ---------------------- | ------------------------ |
+| `FITBIT_CLIENT_ID`     | Fitbit app client ID     |
 | `FITBIT_CLIENT_SECRET` | Fitbit app client secret |
-| `METRICS_AUTH_TOKEN` | Bearer token for authenticating requests |
-
-Set these as Wrangler secrets:
 
 ```sh
 npx wrangler secret put FITBIT_CLIENT_ID
 npx wrangler secret put FITBIT_CLIENT_SECRET
-npx wrangler secret put METRICS_AUTH_TOKEN
 ```
-
-### KV namespace
-
-The worker uses a KV namespace (`FITBIT_KV`) to store the rotating refresh token and cache API responses (12h TTL). The binding is already configured in `wrangler.jsonc`.
 
 ## Dev
 
@@ -54,10 +77,3 @@ npx wrangler dev
 ```sh
 npx wrangler deploy
 ```
-
-## Notes
-
-- Fetches the last 30 days of data per scrape
-- Caches Fitbit API responses in KV to stay within rate limits
-- Limits outbound fetch concurrency to 6 (Workers connection limit)
-- Retries on 429s with backoff using the `Fitbit-Rate-Limit-Reset` header

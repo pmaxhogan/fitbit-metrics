@@ -11,7 +11,13 @@
     "enabled": true,
   },
   "compatibility_flags": ["nodejs_compat"],
-  // KV namespace for storing the rotating Fitbit refresh token
+  "rules": [{ "type": "Text", "globs": ["**/*.md"] }],
+  "routes": [
+    {
+      "pattern": "fitbit-metrics.maxhogan.dev",
+      "custom_domain": true,
+    },
+  ],
   "kv_namespaces": [
     {
       "binding": "FITBIT_KV",

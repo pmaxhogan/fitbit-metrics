@@ -1,33 +1,31 @@
 import type { MiddlewareHandler } from "hono";
-import type { Bindings } from "./consts";
+import { kvKey } from "./consts";
 
-const encoder = new TextEncoder();
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  if (bufA.byteLength !== bufB.byteLength) {
-    crypto.subtle.timingSafeEqual(bufA, bufA);
-    return false;
-  }
-  return crypto.subtle.timingSafeEqual(bufA, bufB);
+/** Resolve a bearer token to a userId, or null if invalid. */
+export async function resolveToken(kv: KVNamespace, token: string | undefined): Promise<string | null> {
+  if (!token) return null;
+  return kv.get(kvKey.token(token));
 }
 
-export function checkToken(provided: string | undefined, expected: string): boolean {
-  if (!provided) return false;
-  return timingSafeEqual(provided, expected);
-}
-
-export const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
+/**
+ * Middleware that requires a valid user token (bearer or ?token= query param).
+ * Sets c.set("userId", ...) on success.
+ */
+export const requireAuth: MiddlewareHandler<{
+  Bindings: Env;
+  Variables: { userId: string };
+}> = async (c, next) => {
   const authHeader = c.req.header("Authorization");
   const queryToken = c.req.query("token");
-  const expected = c.env.METRICS_AUTH_TOKEN;
-
   const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
 
-  if (checkToken(bearerToken, expected) || checkToken(queryToken, expected)) {
-    await next();
-  } else {
+  const token = bearerToken ?? queryToken;
+  const userId = await resolveToken(c.env.FITBIT_KV, token);
+
+  if (!userId) {
     return c.text("Unauthorized\n", 401);
   }
+
+  c.set("userId", userId);
+  await next();
 };

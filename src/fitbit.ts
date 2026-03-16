@@ -108,8 +108,8 @@ export interface FitbitFloorsResponse {
 
 // --- Fitbit API wrapper: caching, 429 backoff, rate-limit awareness, logging ---
 
-async function fitbitApi<T>(kv: KVNamespace, accessToken: string, path: string): Promise<T> {
-  const cacheKey = `fitbit_cache:${path}`;
+async function fitbitApi<T>(kv: KVNamespace, userId: string, accessToken: string, path: string): Promise<T> {
+  const cacheKey = `user:${userId}:cache:${path}`;
 
   const cached = await kv.get(cacheKey);
   if (cached !== null) {
@@ -168,21 +168,21 @@ async function fitbitApi<T>(kv: KVNamespace, accessToken: string, path: string):
 
 // --- Typed fetch helpers ---
 
-/** Simple range fetch — single API call, no chunking needed. */
+/** Simple range fetch: single API call, no chunking needed. */
 function simpleRange<T>(pathTemplate: (s: string, e: string) => string) {
-  return (kv: KVNamespace, accessToken: string, startDate: string, endDate: string): Promise<T> =>
-    fitbitApi<T>(kv, accessToken, pathTemplate(startDate, endDate));
+  return (kv: KVNamespace, userId: string, accessToken: string, startDate: string, endDate: string): Promise<T> =>
+    fitbitApi<T>(kv, userId, accessToken, pathTemplate(startDate, endDate));
 }
 
-/** Chunked range fetch — splits into DATE_CHUNK_LIMIT-day windows, merges a top-level array key. */
+/** Chunked range fetch: splits into DATE_CHUNK_LIMIT-day windows, merges a top-level array key. */
 function chunkedRange<T>(pathTemplate: (s: string, e: string) => string, key: keyof T) {
-  return async (kv: KVNamespace, accessToken: string, startDate: string, endDate: string): Promise<T> => {
+  return async (kv: KVNamespace, userId: string, accessToken: string, startDate: string, endDate: string): Promise<T> => {
     const chunks = dateChunks(startDate, endDate, DATE_CHUNK_LIMIT);
     const results = await pooled(
       chunks.map(
         ([s, e]) =>
           () =>
-            fitbitApi<T>(kv, accessToken, pathTemplate(s, e)),
+            fitbitApi<T>(kv, userId, accessToken, pathTemplate(s, e)),
       ),
     );
     return { [key]: results.flatMap((r) => r[key] as any[]) } as T;
