@@ -117,6 +117,19 @@ const rootRoute = createRoute({
   },
 });
 
+const llmsTxtRoute = createRoute({
+  method: "get",
+  path: "/llms.txt",
+  tags: ["Info"],
+  summary: "LLM-friendly plain text description",
+  responses: {
+    200: {
+      description: "Plain text README for LLMs",
+      content: { "text/plain": { schema: z.string() } },
+    },
+  },
+});
+
 const healthRoute = createRoute({
   method: "get",
   path: "/health",
@@ -247,6 +260,10 @@ a{color:#0066cc}code{background:#f4f4f4;padding:2px 6px;border-radius:3px;font-s
 pre{background:#f4f4f4;padding:12px;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f9f9f9}</style></head>
 <body>${html}</body></html>`);
+});
+
+app.openapi(llmsTxtRoute, (c) => {
+  return c.text(readme, 200, { "Content-Type": "text/plain; charset=utf-8" });
 });
 
 app.openapi(healthRoute, (c) => {

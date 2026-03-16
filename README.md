@@ -1,8 +1,8 @@
-# fitbit-metrics`.maxhogan.dev`
+# [fitbit-metrics`.maxhogan.dev`](https://github.com/pmaxhogan/fitbit-metrics)
 
 Convert Fitbit health data into Prometheus metrics.
 
-Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/metrics` endpoint. Built with [Hono](https://hono.dev/) + TS.
+Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/metrics` endpoint. Includes sleep, RHR, HR zone, HRV, skin temp, SpO2, calories, steps, distance, & floors. Built with [Hono](https://hono.dev/) + TS.
 
 ## Requirements
 
@@ -26,6 +26,8 @@ Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/m
     - targets: ["fitbit-metrics.maxhogan.dev"]
 ```
 
+Metrics are cached for 12 hours on the server-side, so `scrape_interval` can be pretty aggressive if you want but updated data may be delayed.
+
 ## Links
 
 - [Authorize with Fitbit](/authorize)
@@ -33,9 +35,30 @@ Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/m
 - [GitHub](https://github.com/pmaxhogan/fitbit-metrics)
 - [My Website](https://maxhogan.dev)
 
----
+## Metrics
 
-# Development
+All metrics are Prometheus gauges, labeled by `date` (and additional labels where noted). Data covers the last 30 days per scrape.
+
+| Metric | Description | Labels |
+| --- | --- | --- |
+| `fitbit_sleep_hours_asleep` | Total hours asleep | `date` |
+| `fitbit_sleep_hours_in_bed` | Total hours in bed | `date` |
+| `fitbit_sleep_efficiency` | Sleep efficiency score (0–100) | `date` |
+| `fitbit_sleep_stage_minutes` | Minutes in each sleep stage | `date`, `stage` |
+| `fitbit_resting_heart_rate` | Resting heart rate (bpm) | `date` |
+| `fitbit_heart_rate_zone_minutes` | Minutes in each HR zone | `date`, `zone` |
+| `fitbit_hrv_daily_rmssd` | Daily RMSSD HRV (ms) | `date` |
+| `fitbit_hrv_deep_rmssd` | Deep-sleep RMSSD HRV (ms) | `date` |
+| `fitbit_skin_temp_nightly_relative` | Skin temp deviation from baseline (°C) | `date` |
+| `fitbit_spo2_avg` | Average SpO2 % | `date` |
+| `fitbit_spo2_min` | Minimum SpO2 % | `date` |
+| `fitbit_spo2_max` | Maximum SpO2 % | `date` |
+| `fitbit_breathing_rate` | Breathing rate (breaths/min) | `date` |
+| `fitbit_steps` | Daily step count | `date` |
+| `fitbit_calories` | Daily calories burned | `date` |
+| `fitbit_distance` | Daily distance (km) | `date` |
+| `fitbit_distance_mi` | Daily distance (miles) | `date` |
+| `fitbit_floors` | Daily floors climbed | `date` |
 
 ## Routes
 
@@ -47,6 +70,13 @@ Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/m
 | `GET /purge`     | Bearer    | Clears the KV response cache for your account |
 | `GET /doc`       | None      | OpenAPI 3.0 JSON spec                         |
 | `GET /reference` | None      | Scalar API reference UI                       |
+| `GET /llms.txt`  | None      | Plain text README for LLMs                    |
+
+<br/>  
+
+---
+
+# Development
 
 ## Setup
 
