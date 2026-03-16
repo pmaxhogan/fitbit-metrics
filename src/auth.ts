@@ -23,7 +23,7 @@ export const requireAuth: MiddlewareHandler<{
   const userId = await resolveToken(c.env.FITBIT_KV, token);
 
   if (!userId) {
-    return c.text("Unauthorized\n", 401);
+    return c.text("Unauthorized!\nProvide a token via header 'Authorization: Bearer abcd1234-...', or url parameter '?token=abcd1234-...'.\nGet your token via /authorize, see README at / or API reference at /reference", 401);
   }
 
   c.set("userId", userId);
