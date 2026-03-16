@@ -16,7 +16,7 @@
     {
       "binding": "FITBIT_KV",
       "id": "8b9b3eca68994bbbabfff91f94a37b0b",
-      "remote": true,
+      "remote": false,
     },
   ],
 }

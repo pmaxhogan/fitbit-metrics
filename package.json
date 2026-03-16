@@ -8,7 +8,8 @@
     "start": "wrangler dev",
     "test": "vitest",
     "cf-typegen": "wrangler types",
-    "fmt": "prettier --write ."
+    "fmt": "prettier --write .",
+    "pre-commit": "prettier --write . && wrangler types"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.4",

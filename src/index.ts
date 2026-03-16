@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { MiddlewareHandler } from "hono";
 import {
   fetchSleepRange,
   fetchHeartRateRange,
@@ -12,43 +11,13 @@ import {
   fetchDistanceRange,
   fetchFloorsRange,
 } from "./fitbit";
-import { formatPrometheus } from "./prom";
+import { formatPrometheus, type MetricsData } from "./prom";
 import { exchangeAuthCode, getAccessToken } from "./fitbit-auth";
-import { type Bindings } from "./consts";
+import type { Bindings } from "./consts";
 import { dateRange, pooled } from "./utils";
+import { checkToken, requireAuth } from "./auth";
 
 const app = new Hono<{ Bindings: Bindings }>();
-
-const encoder = new TextEncoder();
-
-function timingSafeEqual(a: string, b: string): boolean {
-  const bufA = encoder.encode(a);
-  const bufB = encoder.encode(b);
-  if (bufA.byteLength !== bufB.byteLength) {
-    crypto.subtle.timingSafeEqual(bufA, bufA);
-    return false;
-  }
-  return crypto.subtle.timingSafeEqual(bufA, bufB);
-}
-
-function checkToken(provided: string | undefined, expected: string): boolean {
-  if (!provided) return false;
-  return timingSafeEqual(provided, expected);
-}
-
-const requireAuth: MiddlewareHandler<{ Bindings: Bindings }> = async (c, next) => {
-  const authHeader = c.req.header("Authorization");
-  const queryToken = c.req.query("token");
-  const expected = c.env.METRICS_AUTH_TOKEN;
-
-  const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
-
-  if (checkToken(bearerToken, expected) || checkToken(queryToken, expected)) {
-    await next();
-  } else {
-    return c.text("Unauthorized\n", 401);
-  }
-};
 
 app.use("/purge", requireAuth);
 app.use("/", requireAuth);
@@ -74,7 +43,9 @@ app.get("/metrics", async (c) => {
     const accessToken = await getAccessToken(c.env);
     const { start, end } = dateRange();
     const kv = c.env.FITBIT_KV;
-    const [sleep, heartRate, hrv, tempSkin, spo2, br, steps, calories, distance, floors] = await pooled<any>([
+
+    // pooled limits concurrency to respect Workers' 6 simultaneous connection limit
+    const results = await pooled<any>([
       () => fetchSleepRange(kv, accessToken, start, end),
       () => fetchHeartRateRange(kv, accessToken, start, end),
       () => fetchHrvRange(kv, accessToken, start, end),
@@ -86,7 +57,20 @@ app.get("/metrics", async (c) => {
       () => fetchDistanceRange(kv, accessToken, start, end),
       () => fetchFloorsRange(kv, accessToken, start, end),
     ]);
-    const body = formatPrometheus(sleep, heartRate, hrv, tempSkin, spo2, br, steps, calories, distance, floors);
+
+    const data: MetricsData = {
+      sleep: results[0],
+      heartRate: results[1],
+      hrv: results[2],
+      tempSkin: results[3],
+      spo2: results[4],
+      br: results[5],
+      steps: results[6],
+      calories: results[7],
+      distance: results[8],
+      floors: results[9],
+    };
+    const body = formatPrometheus(data);
     return c.text(body, 200, {
       "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
     });
@@ -136,7 +120,7 @@ app.get("/purge", async (c) => {
 
   do {
     const result = await kv.list({ prefix: "fitbit_cache:", cursor });
-    await Promise.all(result.keys.map((k) => kv.delete(k.name)));
+    await Promise.all(result.keys.map((k: { name: string }) => kv.delete(k.name)));
     deleted += result.keys.length;
     cursor = result.list_complete ? undefined : result.cursor;
   } while (cursor);
