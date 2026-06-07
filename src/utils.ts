@@ -13,13 +13,16 @@ export function dateChunks(startDate: string, endDate: string, maxDays: number):
   return chunks;
 }
 
-export function dateRange(): { start: string; end: string } {
+export function dateRange(daysAgo = 0): { start: string; end: string } {
   const now = new Date();
-  // Use yesterday as end date to avoid incomplete/future days from UTC offset
-  const yesterday = new Date(now.getTime() - 86400000);
-  const end = yesterday.toISOString().slice(0, 10);
-  const start = new Date(yesterday.getTime() - LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
-  return { start, end };
+  // End on yesterday to avoid incomplete/future days from UTC offset, then shift
+  // the whole 30-day window `daysAgo` days further into the past for historical scrapes.
+  const end = new Date(now.getTime() - (1 + daysAgo) * 86400000);
+  const start = new Date(end.getTime() - LOOKBACK_DAYS * 86400000);
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
 }
 
 // --- Concurrency-limited pool ---

@@ -16,7 +16,7 @@ import {
 } from "./fitbit";
 import { formatPrometheus, type MetricsData } from "./prom";
 import { exchangeAuthCode, getAccessToken } from "./fitbit-auth";
-import { kvKey, STATE_TTL_SECONDS } from "./consts";
+import { kvKey, STATE_TTL_SECONDS, CACHE_TTL_SECONDS, HISTORICAL_CACHE_TTL_SECONDS } from "./consts";
 import { dateRange, pooled } from "./utils";
 import { requireAuth } from "./auth";
 
@@ -76,13 +76,31 @@ const metricsRoute = createRoute({
   path: "/metrics",
   tags: ["Metrics"],
   summary: "Prometheus scrape endpoint",
-  description: "Returns Fitbit health data formatted as Prometheus metrics. Requires bearer token.",
+  description:
+    "Returns Fitbit health data formatted as Prometheus metrics. Requires bearer token. " +
+    "By default returns the most recent 30 days; pass ?daysAgo to shift the 30-day window further into the past (e.g. 30, 60, 90) to backfill historical data.",
   security: [{ Bearer: [] }],
+  request: {
+    query: z.object({
+      daysAgo: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .default(0)
+        .openapi({
+          param: { name: "daysAgo", in: "query" },
+          description:
+            "Shift the 30-day window this many days into the past. 0 (default) = most recent 30 days; 30 = the 30 days before that; 60, 90, … reach further back. Windows with daysAgo>0 are immutable and cached for longer.",
+          example: 0,
+        }),
+    }),
+  },
   responses: {
     200: {
       description: "Prometheus-formatted metrics",
       content: { "text/plain": { schema: z.string() } },
     },
+    400: { description: "Invalid query parameter (daysAgo must be a non-negative integer)" },
     401: { description: "Unauthorized" },
     500: { description: "Error fetching metrics" },
   },
@@ -189,22 +207,26 @@ app.openapi(callbackRoute, async (c) => {
 
 app.openapi(metricsRoute, async (c) => {
   const userId = c.get("userId");
+  const { daysAgo } = c.req.valid("query");
   try {
     const accessToken = await getAccessToken(c.env, userId);
-    const { start, end } = dateRange();
+    const { start, end } = dateRange(daysAgo);
+    // Historical windows (daysAgo>0) are in the past and never change, so cache
+    // them far longer than the current window (which Fitbit may still revise).
+    const cacheTtl = daysAgo > 0 ? HISTORICAL_CACHE_TTL_SECONDS : CACHE_TTL_SECONDS;
     const kv = c.env.FITBIT_KV;
 
     const results = await pooled<any>([
-      () => fetchSleepRange(kv, userId, accessToken, start, end),
-      () => fetchHeartRateRange(kv, userId, accessToken, start, end),
-      () => fetchHrvRange(kv, userId, accessToken, start, end),
-      () => fetchTempSkinRange(kv, userId, accessToken, start, end),
-      () => fetchSpO2Range(kv, userId, accessToken, start, end),
-      () => fetchBreathingRateRange(kv, userId, accessToken, start, end),
-      () => fetchStepsRange(kv, userId, accessToken, start, end),
-      () => fetchCaloriesRange(kv, userId, accessToken, start, end),
-      () => fetchDistanceRange(kv, userId, accessToken, start, end),
-      () => fetchFloorsRange(kv, userId, accessToken, start, end),
+      () => fetchSleepRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchHeartRateRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchHrvRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchTempSkinRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchSpO2Range(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchBreathingRateRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchStepsRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchCaloriesRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchDistanceRange(kv, userId, accessToken, start, end, cacheTtl),
+      () => fetchFloorsRange(kv, userId, accessToken, start, end, cacheTtl),
     ]);
 
     const data: MetricsData = {

@@ -28,6 +28,10 @@ Cloudflare Worker that exposes Fitbit health data as a Prometheus-compatible `/m
 
 Metrics are cached for 12 hours on the server-side, so `scrape_interval` can be pretty aggressive if you want but updated data may be delayed.
 
+### Historical backfill (`?daysAgo=`)
+
+`/metrics` returns the most recent 30 days by default. Pass `?daysAgo=N` to shift the 30-day window `N` days further into the past — e.g. `?daysAgo=30` returns the 30 days before the default window, `?daysAgo=60` the 30 before that, and so on. This lets you backfill older history one window at a time. `daysAgo` defaults to `0` (the current behavior) and must be a non-negative integer. Historical windows (`daysAgo>0`) are immutable, so they're cached longer (7 days) than the current window.
+
 ## Links
 
 - [Authorize with Fitbit](/authorize)
@@ -62,15 +66,15 @@ All metrics are Prometheus gauges, labeled by `date` (and additional labels wher
 
 ## Routes
 
-| Route            | Auth      | Description                                   |
-| ---------------- | --------- | --------------------------------------------- |
-| `GET /authorize` | None      | Starts Fitbit OAuth2 flow                     |
-| `GET /callback`  | Via state | OAuth2 callback, returns your API token       |
-| `GET /metrics`   | Bearer    | Prometheus scrape endpoint                    |
-| `GET /purge`     | Bearer    | Clears the KV response cache for your account |
-| `GET /doc`       | None      | OpenAPI 3.0 JSON spec                         |
-| `GET /reference` | None      | Scalar API reference UI                       |
-| `GET /llms.txt`  | None      | Plain text README for LLMs                    |
+| Route            | Auth      | Description                                           |
+| ---------------- | --------- | ----------------------------------------------------- |
+| `GET /authorize` | None      | Starts Fitbit OAuth2 flow                             |
+| `GET /callback`  | Via state | OAuth2 callback, returns your API token               |
+| `GET /metrics`   | Bearer    | Prometheus scrape endpoint (`?daysAgo=N` for history) |
+| `GET /purge`     | Bearer    | Clears the KV response cache for your account         |
+| `GET /doc`       | None      | OpenAPI 3.0 JSON spec                                 |
+| `GET /reference` | None      | Scalar API reference UI                               |
+| `GET /llms.txt`  | None      | Plain text README for LLMs                            |
 
 <br/>  
 
