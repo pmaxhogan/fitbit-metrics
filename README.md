@@ -42,6 +42,7 @@ Visit `/authorize?token=<your API token>` to re-authorize without changing the t
 
 - [Authorize with Google](/authorize)
 - [API Reference](/reference) ([OpenAPI](/doc))
+- [Privacy policy](/privacy)
 - [GitHub](https://github.com/pmaxhogan/fitbit-metrics)
 - [My Website](https://maxhogan.dev)
 
@@ -81,6 +82,7 @@ All metrics are Prometheus gauges, labeled by `date` (and additional labels wher
 | `GET /doc`       | None      | OpenAPI 3.0 JSON spec                                 |
 | `GET /reference` | None      | Scalar API reference UI                               |
 | `GET /llms.txt`  | None      | Plain text README for LLMs                            |
+| `GET /privacy`   | None      | Privacy policy                                        |
 
 <br/>
 

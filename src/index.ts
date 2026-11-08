@@ -1,7 +1,9 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
+import { getCookie, setCookie, deleteCookie } from "hono/cookie";
 import { marked } from "marked";
 import readme from "../README.md";
+import privacy from "../PRIVACY.md";
 import {
   fetchSleep,
   fetchRestingHeartRate,
@@ -24,6 +26,8 @@ import { dateRange } from "./utils";
 import { requireAuth, resolveToken } from "./auth";
 
 type AppEnv = { Bindings: Env; Variables: { userId: string } };
+
+const OAUTH_STATE_COOKIE = "oauth_state";
 
 const app = new OpenAPIHono<AppEnv>();
 
@@ -194,6 +198,15 @@ app.openapi(authorizeRoute, async (c) => {
   await c.env.FITBIT_KV.put(kvKey.oauthState(state), JSON.stringify({ userId: relinkUserId, relink: relinkUserId !== null }), {
     expirationTtl: STATE_TTL_SECONDS,
   });
+  // Bind the state to this browser: /callback only accepts a state whose cookie
+  // it receives, so nobody can start a (re-link) flow and have someone else finish it.
+  setCookie(c, OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    secure: true,
+    sameSite: "Lax",
+    path: "/callback",
+    maxAge: STATE_TTL_SECONDS,
+  });
 
   const params = new URLSearchParams({
     response_type: "code",
@@ -211,6 +224,9 @@ app.openapi(callbackRoute, async (c) => {
   const { code, state, error } = c.req.valid("query");
 
   const stateKey = kvKey.oauthState(state);
+  const cookieState = getCookie(c, OAUTH_STATE_COOKIE);
+  deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/callback", secure: true });
+  if (cookieState !== state) return c.text("OAuth state does not match this browser. Start again at /authorize.", 403);
   const stored = await c.env.FITBIT_KV.get(stateKey);
   if (!stored) return c.text("Invalid or expired OAuth state", 403);
   await c.env.FITBIT_KV.delete(stateKey);
@@ -312,17 +328,21 @@ app.openapi(purgeRoute, async (c) => {
   return c.text(`Purged ${deleted} cached entries\n`);
 });
 
-app.openapi(rootRoute, (c) => {
-  const html = marked.parse(readme) as string;
-  return c.html(`<!DOCTYPE html>
+app.openapi(rootRoute, (c) => c.html(markdownPage("fitbit-metrics", readme)));
+
+app.get("/privacy", (c) => c.html(markdownPage("fitbit-metrics privacy policy", privacy)));
+
+function markdownPage(title: string, markdown: string): string {
+  const html = marked.parse(markdown) as string;
+  return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>fitbit-metrics</title>
+<title>${title}</title>
 <style>body{font-family:system-ui,sans-serif;max-width:640px;margin:60px auto;padding:0 16px;color:#333;line-height:1.6}
 a{color:#0066cc}code{background:#f4f4f4;padding:2px 6px;border-radius:3px;font-size:.9em}
 pre{background:#f4f4f4;padding:12px;border-radius:6px;overflow-x:auto}pre code{background:none;padding:0}
 table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f9f9f9}</style></head>
-<body>${html}</body></html>`);
-});
+<body>${html}</body></html>`;
+}
 
 app.openapi(llmsTxtRoute, (c) => {
   return c.text(readme, 200, { "Content-Type": "text/plain; charset=utf-8" });
