@@ -24,4 +24,4 @@ Only whoever holds your API token can read your metrics. Your data is not sold, 
 
 - `GET /purge` with your token deletes all cached responses.
 - Revoke access at [myaccount.google.com/permissions](https://myaccount.google.com/permissions); the stored refresh token then stops working.
-- To have the stored tokens deleted entirely, email pmaxhogan@gmail.com.
+- To have the stored tokens deleted entirely, email max@maxhogan.dev.
