@@ -3,22 +3,25 @@ import { Scalar } from "@scalar/hono-api-reference";
 import { marked } from "marked";
 import readme from "../README.md";
 import {
-  fetchSleepRange,
-  fetchHeartRateRange,
-  fetchHrvRange,
-  fetchTempSkinRange,
-  fetchSpO2Range,
-  fetchBreathingRateRange,
-  fetchStepsRange,
-  fetchCaloriesRange,
-  fetchDistanceRange,
-  fetchFloorsRange,
-} from "./fitbit";
+  fetchSleep,
+  fetchRestingHeartRate,
+  fetchHrZones,
+  fetchHrv,
+  fetchSkinTemp,
+  fetchSpO2,
+  fetchBreathingRate,
+  fetchSteps,
+  fetchCalories,
+  fetchDistanceKm,
+  fetchFloors,
+  healthApi,
+  type ApiCtx,
+} from "./health";
 import { formatPrometheus, type MetricsData } from "./prom";
-import { exchangeAuthCode, getAccessToken } from "./fitbit-auth";
-import { kvKey, STATE_TTL_SECONDS, CACHE_TTL_SECONDS, HISTORICAL_CACHE_TTL_SECONDS } from "./consts";
-import { dateRange, pooled } from "./utils";
-import { requireAuth } from "./auth";
+import { exchangeAuthCode, getAccessToken } from "./google-auth";
+import { kvKey, STATE_TTL_SECONDS, CACHE_TTL_SECONDS, HISTORICAL_CACHE_TTL_SECONDS, GOOGLE_AUTH_URL, SCOPES, HEALTH_USER } from "./consts";
+import { dateRange } from "./utils";
+import { requireAuth, resolveToken } from "./auth";
 
 type AppEnv = { Bindings: Env; Variables: { userId: string } };
 
@@ -34,10 +37,21 @@ const authorizeRoute = createRoute({
   method: "get",
   path: "/authorize",
   tags: ["Auth"],
-  summary: "Start Fitbit OAuth2 flow",
-  description: "Redirects to Fitbit's authorization page. No authentication required.",
+  summary: "Start Google Health OAuth2 flow",
+  description:
+    "Redirects to Google's authorization page. No authentication required. " +
+    "Pass ?token=<existing API token> to re-link an existing account: the same API token keeps working afterwards.",
+  request: {
+    query: z.object({
+      token: z
+        .string()
+        .optional()
+        .openapi({ description: "Existing API token to re-link (optional)", example: "550e8400-e29b-41d4-a716-446655440000" }),
+    }),
+  },
   responses: {
-    302: { description: "Redirect to Fitbit OAuth2 authorization" },
+    302: { description: "Redirect to Google OAuth2 authorization" },
+    401: { description: "The token passed to re-link is not valid" },
   },
 });
 
@@ -49,8 +63,9 @@ const callbackRoute = createRoute({
   description: "Handles the Fitbit OAuth2 callback. Returns an API token on success.",
   request: {
     query: z.object({
-      code: z.string().openapi({ description: "Authorization code from Fitbit", example: "abc123" }),
+      code: z.string().optional().openapi({ description: "Authorization code from Google", example: "abc123" }),
       state: z.string().openapi({ description: "CSRF state token", example: "550e8400-e29b-41d4-a716-446655440000" }),
+      error: z.string().optional().openapi({ description: "OAuth error from Google, e.g. access_denied" }),
     }),
   },
   responses: {
@@ -59,15 +74,15 @@ const callbackRoute = createRoute({
       content: {
         "application/json": {
           schema: z.object({
-            token: z.string().openapi({ example: "550e8400-e29b-41d4-a716-446655440000" }),
+            token: z.string().nullable().openapi({ example: "550e8400-e29b-41d4-a716-446655440000", description: "null when re-linking" }),
             message: z.string(),
           }),
         },
       },
     },
-    400: { description: "Missing query parameters" },
+    400: { description: "Missing query parameters or authorization denied" },
     403: { description: "Invalid or expired OAuth state" },
-    502: { description: "Fitbit token exchange failed" },
+    502: { description: "Google token exchange failed" },
   },
 });
 
@@ -77,7 +92,7 @@ const metricsRoute = createRoute({
   tags: ["Metrics"],
   summary: "Prometheus scrape endpoint",
   description:
-    "Returns Fitbit health data formatted as Prometheus metrics. Requires bearer token. " +
+    "Returns Fitbit health data (via the Google Health API) formatted as Prometheus metrics. Requires bearer token. " +
     "By default returns the most recent 30 days; pass ?daysAgo to shift the 30-day window further into the past (e.g. 30, 60, 90) to backfill historical data.",
   security: [{ Bearer: [] }],
   request: {
@@ -90,7 +105,7 @@ const metricsRoute = createRoute({
         .openapi({
           param: { name: "daysAgo", in: "query" },
           description:
-            "Shift the 30-day window this many days into the past. 0 (default) = most recent 30 days; 30 = the 30 days before that; 60, 90, … reach further back. Windows with daysAgo>0 are immutable and cached for longer.",
+            "Shift the 30-day window this many days into the past. 0 (default) = most recent 30 days; 30 = the 30 days before that; 60, 90, ... reach further back. Windows with daysAgo>0 are immutable and cached for longer.",
           example: 0,
         }),
     }),
@@ -167,42 +182,76 @@ app.openapi(authorizeRoute, async (c) => {
   const redirectUri = new URL("/callback", c.req.url).toString();
   const state = crypto.randomUUID();
 
-  await c.env.FITBIT_KV.put(kvKey.oauthState(state), "1", {
+  // Re-link: carry the existing userId through the OAuth state so the user's
+  // API token (e.g. the one in prometheus.yml) keeps working.
+  const { token } = c.req.valid("query");
+  let relinkUserId: string | null = null;
+  if (token) {
+    relinkUserId = await resolveToken(c.env.FITBIT_KV, token);
+    if (!relinkUserId) return c.text("Invalid token: cannot re-link. Omit ?token= to create a new one.", 401);
+  }
+
+  await c.env.FITBIT_KV.put(kvKey.oauthState(state), JSON.stringify({ userId: relinkUserId, relink: relinkUserId !== null }), {
     expirationTtl: STATE_TTL_SECONDS,
   });
 
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: c.env.FITBIT_CLIENT_ID,
+    client_id: c.env.GOOGLE_CLIENT_ID,
     redirect_uri: redirectUri,
-    scope: "sleep heartrate temperature oxygen_saturation respiratory_rate activity",
+    scope: SCOPES,
+    access_type: "offline",
+    prompt: "consent",
     state,
   });
-  return c.redirect(`https://www.fitbit.com/oauth2/authorize?${params}`);
+  return c.redirect(`${GOOGLE_AUTH_URL}?${params}`);
 });
 
 app.openapi(callbackRoute, async (c) => {
-  const { code, state } = c.req.valid("query");
+  const { code, state, error } = c.req.valid("query");
 
   const stateKey = kvKey.oauthState(state);
-  const valid = await c.env.FITBIT_KV.get(stateKey);
-  if (!valid) return c.text("Invalid or expired OAuth state", 403);
+  const stored = await c.env.FITBIT_KV.get(stateKey);
+  if (!stored) return c.text("Invalid or expired OAuth state", 403);
   await c.env.FITBIT_KV.delete(stateKey);
 
-  const userId = crypto.randomUUID();
-  const token = crypto.randomUUID();
+  if (error || !code) return c.text(`Authorization failed: ${error ?? "no code returned"}`, 400);
 
-  const redirectUri = new URL("/callback", c.req.url).toString();
+  let relinkUserId: string | null = null;
   try {
-    await exchangeAuthCode(c.env, userId, code, redirectUri);
+    relinkUserId = (JSON.parse(stored) as { userId?: string | null }).userId ?? null;
+  } catch {
+    // not JSON: treat as a new user
+  }
+
+  const userId = relinkUserId ?? crypto.randomUUID();
+  const redirectUri = new URL("/callback", c.req.url).toString();
+  let accessToken: string;
+  try {
+    // Drop any cached access token so the fresh one is used immediately.
+    await c.env.FITBIT_KV.delete(kvKey.accessToken(userId));
+    accessToken = await exchangeAuthCode(c.env, userId, code, redirectUri);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.text(message, 502);
   }
 
-  await c.env.FITBIT_KV.put(kvKey.token(token), userId);
+  // Confirm the Google account has a Google Health (Fitbit) profile.
+  let linked = "Google Health account linked.";
+  try {
+    const ctx: ApiCtx = { kv: c.env.FITBIT_KV, userId, accessToken, cacheTtl: 60 };
+    await healthApi(ctx, { method: "GET", path: `${HEALTH_USER}/identity`, query: { t: String(Date.now()) } });
+  } catch (err) {
+    linked = `Warning: ${err instanceof Error ? err.message : String(err)}`;
+  }
 
-  return c.json({ token, message: "Fitbit authorization complete. Save this token! It's your API key." }, 200);
+  if (relinkUserId) {
+    return c.json({ token: null, message: `Re-linked. Your existing API token keeps working. ${linked}` }, 200);
+  }
+
+  const token = crypto.randomUUID();
+  await c.env.FITBIT_KV.put(kvKey.token(token), userId);
+  return c.json({ token, message: `Authorization complete. Save this token! It's your API key. ${linked}` }, 200);
 });
 
 app.openapi(metricsRoute, async (c) => {
@@ -214,33 +263,24 @@ app.openapi(metricsRoute, async (c) => {
     // Historical windows (daysAgo>0) are in the past and never change, so cache
     // them far longer than the current window (which Fitbit may still revise).
     const cacheTtl = daysAgo > 0 ? HISTORICAL_CACHE_TTL_SECONDS : CACHE_TTL_SECONDS;
-    const kv = c.env.FITBIT_KV;
+    const ctx: ApiCtx = { kv: c.env.FITBIT_KV, userId, accessToken, cacheTtl };
 
-    const results = await pooled<any>([
-      () => fetchSleepRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchHeartRateRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchHrvRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchTempSkinRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchSpO2Range(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchBreathingRateRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchStepsRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchCaloriesRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchDistanceRange(kv, userId, accessToken, start, end, cacheTtl),
-      () => fetchFloorsRange(kv, userId, accessToken, start, end, cacheTtl),
+    // Workers allow 6 concurrent outgoing connections; extra fetches queue in the runtime.
+    const [sleep, restingHeartRate, hrZones, hrv, skinTemp, spo2, breathingRate, steps, calories, distanceKm, floors] = await Promise.all([
+      fetchSleep(ctx, start, end),
+      fetchRestingHeartRate(ctx, start, end),
+      fetchHrZones(ctx, start, end),
+      fetchHrv(ctx, start, end),
+      fetchSkinTemp(ctx, start, end),
+      fetchSpO2(ctx, start, end),
+      fetchBreathingRate(ctx, start, end),
+      fetchSteps(ctx, start, end),
+      fetchCalories(ctx, start, end),
+      fetchDistanceKm(ctx, start, end),
+      fetchFloors(ctx, start, end),
     ]);
 
-    const data: MetricsData = {
-      sleep: results[0],
-      heartRate: results[1],
-      hrv: results[2],
-      tempSkin: results[3],
-      spo2: results[4],
-      br: results[5],
-      steps: results[6],
-      calories: results[7],
-      distance: results[8],
-      floors: results[9],
-    };
+    const data: MetricsData = { sleep, restingHeartRate, hrZones, hrv, skinTemp, spo2, breathingRate, steps, calories, distanceKm, floors };
     const body = formatPrometheus(data);
     return c.text(body, 200, {
       "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
@@ -257,7 +297,7 @@ app.openapi(metricsRoute, async (c) => {
 app.openapi(purgeRoute, async (c) => {
   const userId = c.get("userId");
   const kv = c.env.FITBIT_KV;
-  const prefix = `user:${userId}:cache:`;
+  const prefix = kvKey.cachePrefix(userId);
   let cursor: string | undefined;
   let deleted = 0;
 

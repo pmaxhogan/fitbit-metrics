@@ -1,5 +1,10 @@
 import { LOOKBACK_DAYS, MAX_CONCURRENCY } from "./consts";
 
+/** Shift a YYYY-MM-DD date by `days` (negative goes back). */
+export function addDays(date: string, days: number): string {
+  return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
+}
+
 export function dateChunks(startDate: string, endDate: string, maxDays: number): [string, string][] {
   const start = new Date(startDate);
   const end = new Date(endDate);
