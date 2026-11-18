@@ -55,10 +55,8 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+    # github-actions accepts only default-days (semver-*-days is rejected for it).
     cooldown:
       default-days: 3
-      semver-major-days: 14
-      semver-minor-days: 3
-      semver-patch-days: 0
     commit-message:
       prefix: "deps(actions)"
