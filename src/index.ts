@@ -6,6 +6,7 @@ import readme from "../README.md";
 import privacy from "../PRIVACY.md";
 import {
   fetchSleep,
+  fetchCurrentSleep,
   fetchRestingHeartRate,
   fetchHrZones,
   fetchHrv,
@@ -283,7 +284,8 @@ app.openapi(metricsRoute, async (c) => {
 
     // Workers allow 6 concurrent outgoing connections; extra fetches queue in the runtime.
     const [sleep, restingHeartRate, hrZones, hrv, skinTemp, spo2, breathingRate, steps, calories, distanceKm, floors] = await Promise.all([
-      fetchSleep(ctx, start, end),
+      // Historical windows are immutable; the current one also covers today's sleep.
+      daysAgo > 0 ? fetchSleep(ctx, start, end) : fetchCurrentSleep(ctx, start, end),
       fetchRestingHeartRate(ctx, start, end),
       fetchHrZones(ctx, start, end),
       fetchHrv(ctx, start, end),

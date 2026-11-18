@@ -1,4 +1,4 @@
-import { MAX_RETRIES, HEALTH_API_BASE, HEALTH_USER, DATA_SOURCE_FAMILY, kvKey } from "./consts";
+import { MAX_RETRIES, HEALTH_API_BASE, HEALTH_USER, DATA_SOURCE_FAMILY, RECENT_SLEEP_CACHE_TTL_SECONDS, kvKey } from "./consts";
 import { addDays, dateChunks, pooled } from "./utils";
 
 // --- Google Health API v4 response shapes (only the fields we read) ---
@@ -382,6 +382,22 @@ export const fetchSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
   const filter = `sleep.interval.civil_end_time >= "${start}" AND sleep.interval.civil_end_time < "${addDays(end, 1)}"`;
   // Sleep: max page size 25, and dataSourceFamily is not supported.
   return normalizeSleep(await listAll(ctx, "sleep", filter, 25));
+};
+
+/**
+ * Sleep for the current window (daysAgo=0), where `end` is UTC yesterday.
+ * Older nights come from the regular long-lived cache; the last two nights plus
+ * today and tomorrow (UTC) come from a short-lived cache. Including today/tomorrow
+ * means a night that ended this morning in any time zone shows up as soon as it
+ * syncs instead of after the next UTC midnight. The two ranges meet without overlap.
+ */
+export const fetchCurrentSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
+  const recentStart = addDays(end, -1);
+  const [settled, recent] = await Promise.all([
+    fetchSleep(ctx, start, addDays(recentStart, -1)),
+    fetchSleep({ ...ctx, cacheTtl: RECENT_SLEEP_CACHE_TTL_SECONDS }, recentStart, addDays(end, 1)),
+  ]);
+  return [...settled, ...recent];
 };
 
 function dailyList<T>(dataType: string, field: string, normalize: (p: DataPoint[]) => T): Fetcher<T> {

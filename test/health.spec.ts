@@ -13,12 +13,14 @@ import {
   describeApiError,
   fetchSteps,
   fetchSleep,
+  fetchCurrentSleep,
   fetchCalories,
   type DataPoint,
   type RollupPoint,
   type ApiCtx,
 } from "../src/health";
 import { formatPrometheus, type MetricsData } from "../src/prom";
+import { RECENT_SLEEP_CACHE_TTL_SECONDS } from "../src/consts";
 
 const d = (year: number, month: number, day: number) => ({ year, month, day });
 
@@ -242,6 +244,36 @@ describe("API requests", () => {
     );
     expect(u.searchParams.get("pageSize")).toBe("25");
     expect(u.searchParams.has("dataSourceFamily")).toBe(false);
+  });
+
+  it("fetches current sleep as a long-cached settled range plus a short-cached recent range through tomorrow", async () => {
+    const filters: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const filter = new URL(String(input)).searchParams.get("filter") ?? "";
+      filters.push(filter);
+      return json({ dataPoints: filter.includes('< "2026-11-19"') ? [sleepPoint] : [] });
+    });
+    const c = { ...ctx(), cacheTtl: 12 * 60 * 60 };
+    const nights = await fetchCurrentSleep(c, "2026-10-18", "2026-11-17");
+    expect(nights).toHaveLength(1);
+    // Contiguous, non-overlapping: settled ends where recent starts. Recent runs
+    // through the day after `end`, so a night that ended today (in any time zone) is included.
+    expect(filters.sort()).toEqual([
+      'sleep.interval.civil_end_time >= "2026-10-18" AND sleep.interval.civil_end_time < "2026-11-16"',
+      'sleep.interval.civil_end_time >= "2026-11-16" AND sleep.interval.civil_end_time < "2026-11-19"',
+    ]);
+
+    // The recent range is cached briefly so a night shows up soon after the watch syncs.
+    const { keys } = await env.FITBIT_KV.list({ prefix: `user:${c.userId}:cache:` });
+    expect(keys).toHaveLength(2);
+    const ttl = (needle: string) => {
+      const key = keys.find((k) => decodeURIComponent(k.name.replace(/\+/g, " ")).includes(needle));
+      expect(key?.expiration, `cache key for ${needle}`).toBeTypeOf("number");
+      return key!.expiration! - Date.now() / 1000;
+    };
+    expect(ttl('< "2026-11-19"')).toBeGreaterThan(0);
+    expect(ttl('< "2026-11-19"')).toBeLessThanOrEqual(RECENT_SLEEP_CACHE_TTL_SECONDS);
+    expect(ttl('< "2026-11-16"')).toBeGreaterThan(RECENT_SLEEP_CACHE_TTL_SECONDS);
   });
 
   it("retries a 429 and surfaces API errors", async () => {
