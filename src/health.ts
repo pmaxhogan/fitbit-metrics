@@ -454,7 +454,7 @@ export const fetchCurrentSleep: Fetcher<SleepNight[]> = async (ctx, start, end) 
   const recentStart = addDays(end, -1);
   const [settled, recent] = await Promise.all([
     fetchSleep(ctx, start, addDays(recentStart, -1)),
-    fetchSleep({ ...ctx, cacheTtl: 0 }, recentStart, addDays(end, 1)),
+    fetchSleep({ ...ctx, cacheTtl: 0 }, recentStart, addDays(end, 2)),
   ]);
   return [...settled, ...recent];
 };
