@@ -14,6 +14,8 @@ import {
   fetchSteps,
   fetchSleep,
   fetchCurrentSleep,
+  fetchRestingHeartRate,
+  withLiveRecent,
   fetchCalories,
   type DataPoint,
   type RollupPoint,
@@ -322,6 +324,35 @@ describe("API requests", () => {
     const { keys } = await env.FITBIT_KV.list({ prefix: `user:${c.userId}:cache:` });
     expect(keys).toHaveLength(1);
     expect(decodeURIComponent(keys[0].name.replace(/\+/g, " "))).toContain('< "2026-11-16"');
+  });
+
+  it("applies the same cached-settled + live-recent split to daily nightly metrics", async () => {
+    const f = "daily_resting_heart_rate.date";
+    const SETTLED = `${f} >= "2026-10-18" AND ${f} < "2026-11-16"`;
+    const RECENT = `${f} >= "2026-11-16" AND ${f} < "2026-11-20"`;
+    const filters: string[] = [];
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const filter = new URL(String(input)).searchParams.get("filter") ?? "";
+      filters.push(filter);
+      const day = filter === RECENT ? 18 : 1;
+      return json({
+        dataPoints: [
+          { dailyRestingHeartRate: { date: d(2026, 11, day), beatsPerMinute: String(50 + day) } },
+        ],
+      });
+    });
+    const c = { ...ctx(), cacheTtl: 12 * 60 * 60 };
+    const fetchCurrentRhr = withLiveRecent(fetchRestingHeartRate);
+
+    const expected = [
+      { date: "2026-11-01", value: 51 },
+      { date: "2026-11-18", value: 68 },
+    ];
+    expect(await fetchCurrentRhr(c, "2026-10-18", "2026-11-17")).toEqual(expected);
+    expect(await fetchCurrentRhr(c, "2026-10-18", "2026-11-17")).toEqual(expected);
+    expect(filters.sort()).toEqual([SETTLED, RECENT, RECENT]);
+    const { keys } = await env.FITBIT_KV.list({ prefix: `user:${c.userId}:cache:` });
+    expect(keys).toHaveLength(1);
   });
 
   it("retries a 429 and surfaces API errors", async () => {

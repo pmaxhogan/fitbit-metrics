@@ -6,7 +6,8 @@ import readme from "../README.md";
 import privacy from "../PRIVACY.md";
 import {
   fetchSleep,
-  fetchCurrentSleep,
+  withLiveRecent,
+  type Fetcher,
   fetchRestingHeartRate,
   fetchHrZones,
   fetchHrv,
@@ -319,6 +320,12 @@ app.openapi(metricsRoute, async (c) => {
     const cacheTtl = daysAgo > 0 ? HISTORICAL_CACHE_TTL_SECONDS : CACHE_TTL_SECONDS;
     const ctx: ApiCtx = { kv: c.env.FITBIT_KV, userId, accessToken, cacheTtl };
 
+    // Historical windows are immutable. In the current one, per-night metrics (sleep and
+    // the overnight readings) also cover today and fetch their last few nights live, so
+    // last night shows up on the first scrape after the watch syncs. Activity rollups keep
+    // ending on yesterday so a partial day is never reported.
+    const nightly = <T>(f: Fetcher<T[]>): Fetcher<T[]> => (daysAgo > 0 ? f : withLiveRecent(f));
+
     // Workers allow 6 concurrent outgoing connections; extra fetches queue in the runtime.
     const [
       sleep,
@@ -333,14 +340,13 @@ app.openapi(metricsRoute, async (c) => {
       distanceKm,
       floors,
     ] = await Promise.all([
-      // Historical windows are immutable; the current one also covers today's sleep.
-      daysAgo > 0 ? fetchSleep(ctx, start, end) : fetchCurrentSleep(ctx, start, end),
-      fetchRestingHeartRate(ctx, start, end),
+      nightly(fetchSleep)(ctx, start, end),
+      nightly(fetchRestingHeartRate)(ctx, start, end),
       fetchHrZones(ctx, start, end),
-      fetchHrv(ctx, start, end),
-      fetchSkinTemp(ctx, start, end),
-      fetchSpO2(ctx, start, end),
-      fetchBreathingRate(ctx, start, end),
+      nightly(fetchHrv)(ctx, start, end),
+      nightly(fetchSkinTemp)(ctx, start, end),
+      nightly(fetchSpO2)(ctx, start, end),
+      nightly(fetchBreathingRate)(ctx, start, end),
       fetchSteps(ctx, start, end),
       fetchCalories(ctx, start, end),
       fetchDistanceKm(ctx, start, end),

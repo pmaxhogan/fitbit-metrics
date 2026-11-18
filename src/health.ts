@@ -433,7 +433,7 @@ export function normalizeSkinTemp(points: DataPoint[]): DailyValue[] {
 
 // --- Fetchers: [start, end] inclusive dates, as produced by dateRange() ---
 
-type Fetcher<T> = (ctx: ApiCtx, start: string, end: string) => Promise<T>;
+export type Fetcher<T> = (ctx: ApiCtx, start: string, end: string) => Promise<T>;
 
 export const fetchSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
   const filter = `sleep.interval.civil_end_time >= "${start}" AND sleep.interval.civil_end_time < "${addDays(end, 1)}"`;
@@ -442,22 +442,27 @@ export const fetchSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
 };
 
 /**
- * Sleep for the current window (daysAgo=0), where `end` is UTC yesterday.
- * Older nights come from the regular long-lived cache; the last two nights plus
- * today and tomorrow (UTC) are fetched live on every scrape. Including today/tomorrow
- * means a night that ended this morning in any time zone is in range, and fetching
- * it live means it shows up on the first scrape after the watch syncs. Live fetches
- * cost one small API call per scrape (the API allows 300/min per user) and no KV
- * writes. The two ranges meet without overlap.
+ * Wrap a per-night fetcher for the current window (daysAgo=0), where `end` is UTC
+ * yesterday. Older nights come from the regular long-lived cache; the last two nights
+ * plus today and tomorrow (UTC) are fetched live on every scrape. Including
+ * today/tomorrow means a night that ended this morning in any time zone is in range,
+ * and fetching it live means it shows up on the first scrape after the watch syncs.
+ * Each live fetch is one small API call per scrape (the API allows 300/min per user)
+ * and no KV writes. The two ranges meet without overlap, and each is sorted by date,
+ * so the concatenation is too.
  */
-export const fetchCurrentSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
-  const recentStart = addDays(end, -1);
-  const [settled, recent] = await Promise.all([
-    fetchSleep(ctx, start, addDays(recentStart, -1)),
-    fetchSleep({ ...ctx, cacheTtl: 0 }, recentStart, addDays(end, 2)),
-  ]);
-  return [...settled, ...recent];
-};
+export function withLiveRecent<T>(fetcher: Fetcher<T[]>): Fetcher<T[]> {
+  return async (ctx, start, end) => {
+    const recentStart = addDays(end, -1);
+    const [settled, recent] = await Promise.all([
+      fetcher(ctx, start, addDays(recentStart, -1)),
+      fetcher({ ...ctx, cacheTtl: 0 }, recentStart, addDays(end, 2)),
+    ]);
+    return [...settled, ...recent];
+  };
+}
+
+export const fetchCurrentSleep = withLiveRecent(fetchSleep);
 
 function dailyList<T>(
   dataType: string,
