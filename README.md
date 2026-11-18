@@ -28,7 +28,7 @@ Data comes from the [Google Health API](https://developers.google.com/health) (v
     - targets: ["fitbit-metrics.maxhogan.dev"]
 ```
 
-Metrics are cached for 12 hours on the server-side, so `scrape_interval` can be pretty aggressive if you want but updated data may be delayed. The exception is the last few nights of sleep, which are cached for only 10 minutes and include today, so last night's sleep shows up within one scrape of your watch syncing.
+Metrics are cached for 12 hours on the server-side, so `scrape_interval` can be pretty aggressive if you want but updated data may be delayed. The exception is the last few nights of sleep (including today), which are fetched live on every scrape, so last night's sleep shows up on the first scrape after your watch syncs. That is one small API call per scrape and no KV writes, so a `scrape_interval` of `1m` is fine.
 
 ### Re-linking an existing token
 

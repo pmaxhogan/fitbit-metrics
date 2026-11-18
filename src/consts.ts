@@ -16,9 +16,6 @@ export const DATA_SOURCE_FAMILY = `${HEALTH_USER}/dataSourceFamilies/google-wear
 
 export const LOOKBACK_DAYS = 30;
 export const CACHE_TTL_SECONDS = 12 * 60 * 60; // 12 hours (current window: recent days may still be revised)
-// The last few nights of sleep are cached briefly (kept under the Prometheus scrape
-// interval) so last night shows up soon after the watch syncs, not hours later.
-export const RECENT_SLEEP_CACHE_TTL_SECONDS = 10 * 60;
 export const HISTORICAL_CACHE_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days (daysAgo>0 windows are in the past and immutable)
 export const MAX_RETRIES = 4;
 export const MAX_CONCURRENCY = 6; // Workers limit: 6 simultaneous outgoing connections

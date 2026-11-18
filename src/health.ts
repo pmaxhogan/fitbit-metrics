@@ -1,11 +1,4 @@
-import {
-  MAX_RETRIES,
-  HEALTH_API_BASE,
-  HEALTH_USER,
-  DATA_SOURCE_FAMILY,
-  RECENT_SLEEP_CACHE_TTL_SECONDS,
-  kvKey,
-} from "./consts";
+import { MAX_RETRIES, HEALTH_API_BASE, HEALTH_USER, DATA_SOURCE_FAMILY, kvKey } from "./consts";
 import { addDays, dateChunks, pooled } from "./utils";
 
 // --- Google Health API v4 response shapes (only the fields we read) ---
@@ -154,6 +147,7 @@ export interface ApiCtx {
   kv: KVNamespace;
   userId: string;
   accessToken: string;
+  /** KV cache lifetime in seconds; 0 bypasses the cache (no KV read or write). */
   cacheTtl: number;
 }
 
@@ -190,7 +184,8 @@ export async function healthApi<T>(ctx: ApiCtx, req: ApiRequest): Promise<T> {
   // range), so each distinct window, e.g. different ?daysAgo values, caches independently.
   const cacheKey = kvKey.cache(ctx.userId, `gh:${label}`);
 
-  const cached = await ctx.kv.get(cacheKey);
+  const useCache = ctx.cacheTtl > 0;
+  const cached = useCache ? await ctx.kv.get(cacheKey) : null;
   if (cached !== null) {
     console.log(`[health] cache hit: ${label}`);
     return JSON.parse(cached) as T;
@@ -225,7 +220,7 @@ export async function healthApi<T>(ctx: ApiCtx, req: ApiRequest): Promise<T> {
     }
 
     const data = (await res.json()) as T;
-    await ctx.kv.put(cacheKey, JSON.stringify(data), { expirationTtl: ctx.cacheTtl });
+    if (useCache) await ctx.kv.put(cacheKey, JSON.stringify(data), { expirationTtl: ctx.cacheTtl });
     return data;
   }
   throw new Error(`Google Health API ${req.path}: max retries exceeded`);
@@ -449,15 +444,17 @@ export const fetchSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
 /**
  * Sleep for the current window (daysAgo=0), where `end` is UTC yesterday.
  * Older nights come from the regular long-lived cache; the last two nights plus
- * today and tomorrow (UTC) come from a short-lived cache. Including today/tomorrow
- * means a night that ended this morning in any time zone shows up as soon as it
- * syncs instead of after the next UTC midnight. The two ranges meet without overlap.
+ * today and tomorrow (UTC) are fetched live on every scrape. Including today/tomorrow
+ * means a night that ended this morning in any time zone is in range, and fetching
+ * it live means it shows up on the first scrape after the watch syncs. Live fetches
+ * cost one small API call per scrape (the API allows 300/min per user) and no KV
+ * writes. The two ranges meet without overlap.
  */
 export const fetchCurrentSleep: Fetcher<SleepNight[]> = async (ctx, start, end) => {
   const recentStart = addDays(end, -1);
   const [settled, recent] = await Promise.all([
     fetchSleep(ctx, start, addDays(recentStart, -1)),
-    fetchSleep({ ...ctx, cacheTtl: RECENT_SLEEP_CACHE_TTL_SECONDS }, recentStart, addDays(end, 1)),
+    fetchSleep({ ...ctx, cacheTtl: 0 }, recentStart, addDays(end, 1)),
   ]);
   return [...settled, ...recent];
 };
