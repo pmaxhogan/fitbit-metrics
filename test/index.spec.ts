@@ -13,14 +13,18 @@ describe("fitbit-metrics worker", () => {
     const response = await SELF.fetch("https://example.com/authorize", { redirect: "manual" });
     expect(response.status).toBe(302);
     const location = new URL(response.headers.get("Location")!);
-    expect(location.origin + location.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
+    expect(location.origin + location.pathname).toBe(
+      "https://accounts.google.com/o/oauth2/v2/auth",
+    );
     expect(location.searchParams.get("access_type")).toBe("offline");
     expect(location.searchParams.get("redirect_uri")).toBe("https://example.com/callback");
     expect(location.searchParams.get("scope")).toContain("googlehealth.sleep.readonly");
   });
 
   it("rejects re-linking with an unknown token", async () => {
-    const response = await SELF.fetch("https://example.com/authorize?token=nope", { redirect: "manual" });
+    const response = await SELF.fetch("https://example.com/authorize?token=nope", {
+      redirect: "manual",
+    });
     expect(response.status).toBe(401);
   });
 

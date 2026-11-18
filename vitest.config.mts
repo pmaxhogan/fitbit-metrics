@@ -7,4 +7,8 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
     }),
   ],
+  test: {
+    // The Workers pool supports istanbul coverage only (not v8).
+    coverage: { provider: "istanbul", include: ["src/**"] },
+  },
 });

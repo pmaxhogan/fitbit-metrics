@@ -31,4 +31,4 @@ https://developers.cloudflare.com/workers/runtime-apis/nodejs/
 ## Product Docs
 
 Retrieve API references and limits from:
-`/kv/` · `/r2/` · `/d1/` · `/durable-objects/` · `/queues/` · `/vectorize/` · `/workers-ai/` · `/agents/`
+`/kv/` - `/r2/` - `/d1/` - `/durable-objects/` - `/queues/` - `/vectorize/` - `/workers-ai/` - `/agents/`

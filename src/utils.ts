@@ -5,7 +5,11 @@ export function addDays(date: string, days: number): string {
   return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
 }
 
-export function dateChunks(startDate: string, endDate: string, maxDays: number): [string, string][] {
+export function dateChunks(
+  startDate: string,
+  endDate: string,
+  maxDays: number,
+): [string, string][] {
   const start = new Date(startDate);
   const end = new Date(endDate);
   const chunks: [string, string][] = [];
@@ -32,7 +36,10 @@ export function dateRange(daysAgo = 0): { start: string; end: string } {
 
 // --- Concurrency-limited pool ---
 
-export async function pooled<T>(tasks: (() => Promise<T>)[], concurrency = MAX_CONCURRENCY): Promise<T[]> {
+export async function pooled<T>(
+  tasks: (() => Promise<T>)[],
+  concurrency = MAX_CONCURRENCY,
+): Promise<T[]> {
   const results: T[] = new Array(tasks.length);
   let idx = 0;
 

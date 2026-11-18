@@ -91,24 +91,51 @@ describe("normalizers", () => {
   });
 
   it("keeps HRV rows with only one of the two RMSSD values", () => {
-    expect(normalizeHrv([{ dailyHeartRateVariability: { date: d(2026, 11, 7), averageHeartRateVariabilityMilliseconds: 41.5 } }])).toEqual([
-      { date: "2026-11-07", dailyRmssd: 41.5, deepRmssd: undefined },
-    ]);
+    expect(
+      normalizeHrv([
+        {
+          dailyHeartRateVariability: {
+            date: d(2026, 11, 7),
+            averageHeartRateVariabilityMilliseconds: 41.5,
+          },
+        },
+      ]),
+    ).toEqual([{ date: "2026-11-07", dailyRmssd: 41.5, deepRmssd: undefined }]);
   });
 
   it("maps SpO2, breathing rate and relative skin temperature", () => {
     expect(
       normalizeSpO2([
-        { dailyOxygenSaturation: { date: d(2026, 11, 7), averagePercentage: 95.4, lowerBoundPercentage: 91, upperBoundPercentage: 99 } },
+        {
+          dailyOxygenSaturation: {
+            date: d(2026, 11, 7),
+            averagePercentage: 95.4,
+            lowerBoundPercentage: 91,
+            upperBoundPercentage: 99,
+          },
+        },
       ]),
     ).toEqual([{ date: "2026-11-07", avg: 95.4, min: 91, max: 99 }]);
-    expect(normalizeBreathingRate([{ dailyRespiratoryRate: { date: d(2026, 11, 7), breathsPerMinute: 14.2 } }])).toEqual([
-      { date: "2026-11-07", value: 14.2 },
-    ]);
+    expect(
+      normalizeBreathingRate([
+        { dailyRespiratoryRate: { date: d(2026, 11, 7), breathsPerMinute: 14.2 } },
+      ]),
+    ).toEqual([{ date: "2026-11-07", value: 14.2 }]);
     expect(
       normalizeSkinTemp([
-        { dailySleepTemperatureDerivations: { date: d(2026, 11, 7), nightlyTemperatureCelsius: 34.1, baselineTemperatureCelsius: 34.4 } },
-        { dailySleepTemperatureDerivations: { date: d(2026, 11, 8), nightlyTemperatureCelsius: 34.1 } },
+        {
+          dailySleepTemperatureDerivations: {
+            date: d(2026, 11, 7),
+            nightlyTemperatureCelsius: 34.1,
+            baselineTemperatureCelsius: 34.4,
+          },
+        },
+        {
+          dailySleepTemperatureDerivations: {
+            date: d(2026, 11, 8),
+            nightlyTemperatureCelsius: 34.1,
+          },
+        },
       ]),
     ).toEqual([{ date: "2026-11-07", value: -0.3 }]);
   });
@@ -127,9 +154,9 @@ describe("normalizers", () => {
       },
       { civilStartTime: { date: d(2026, 11, 8) } },
     ];
-    expect(rollupValues(points, (p) => (p.steps?.countSum ? Number(p.steps.countSum) : undefined))).toEqual([
-      { date: "2026-11-07", value: 10234 },
-    ]);
+    expect(
+      rollupValues(points, (p) => (p.steps?.countSum ? Number(p.steps.countSum) : undefined)),
+    ).toEqual([{ date: "2026-11-07", value: 10234 }]);
     expect(rollupHrZones(points)).toEqual([
       {
         date: "2026-11-07",
@@ -144,7 +171,13 @@ describe("normalizers", () => {
   });
 
   it("explains ACCOUNT_NOT_LINKED", () => {
-    const body = JSON.stringify({ error: { code: 400, status: "FAILED_PRECONDITION", details: [{ reason: "ACCOUNT_NOT_LINKED" }] } });
+    const body = JSON.stringify({
+      error: {
+        code: 400,
+        status: "FAILED_PRECONDITION",
+        details: [{ reason: "ACCOUNT_NOT_LINKED" }],
+      },
+    });
     expect(describeApiError(400, body)).toContain("account not linked");
   });
 });
@@ -190,8 +223,14 @@ describe("formatPrometheus", () => {
 describe("API requests", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const ctx = (): ApiCtx => ({ kv: env.FITBIT_KV, userId: crypto.randomUUID(), accessToken: "at", cacheTtl: 60 });
-  const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
+  const ctx = (): ApiCtx => ({
+    kv: env.FITBIT_KV,
+    userId: crypto.randomUUID(),
+    accessToken: "at",
+    cacheTtl: 60,
+  });
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } });
 
   it("posts a daily rollup with an exclusive end date and follows pagination", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
@@ -199,8 +238,17 @@ describe("API requests", () => {
       calls.push({ url: String(input), init });
       const body = JSON.parse(String(init?.body));
       return body.pageToken
-        ? json({ rollupDataPoints: [{ civilStartTime: { date: d(2026, 11, 2) }, steps: { countSum: "200" } }] })
-        : json({ rollupDataPoints: [{ civilStartTime: { date: d(2026, 11, 1) }, steps: { countSum: "100" } }], nextPageToken: "p2" });
+        ? json({
+            rollupDataPoints: [
+              { civilStartTime: { date: d(2026, 11, 2) }, steps: { countSum: "200" } },
+            ],
+          })
+        : json({
+            rollupDataPoints: [
+              { civilStartTime: { date: d(2026, 11, 1) }, steps: { countSum: "100" } },
+            ],
+            nextPageToken: "p2",
+          });
     });
 
     const rows = await fetchSteps(ctx(), "2026-11-01", "2026-11-02");
@@ -209,7 +257,9 @@ describe("API requests", () => {
       { date: "2026-11-02", value: 200 },
     ]);
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toBe("https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp");
+    expect(calls[0].url).toBe(
+      "https://health.googleapis.com/v4/users/me/dataTypes/steps/dataPoints:dailyRollUp",
+    );
     expect(calls[0].init?.method).toBe("POST");
     const body = JSON.parse(String(calls[0].init?.body));
     expect(body.range).toEqual({ start: { date: d(2026, 11, 1) }, end: { date: d(2026, 11, 3) } });
@@ -286,8 +336,12 @@ describe("API requests", () => {
 
     vi.restoreAllMocks();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ error: { status: "PERMISSION_DENIED", message: "nope" } }), { status: 403 }),
+      new Response(JSON.stringify({ error: { status: "PERMISSION_DENIED", message: "nope" } }), {
+        status: 403,
+      }),
     );
-    await expect(fetchSteps(ctx(), "2026-11-01", "2026-11-01")).rejects.toThrow("403 PERMISSION_DENIED: nope");
+    await expect(fetchSteps(ctx(), "2026-11-01", "2026-11-01")).rejects.toThrow(
+      "403 PERMISSION_DENIED: nope",
+    );
   });
 });

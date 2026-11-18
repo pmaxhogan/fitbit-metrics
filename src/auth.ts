@@ -2,7 +2,10 @@ import type { MiddlewareHandler } from "hono";
 import { kvKey } from "./consts";
 
 /** Resolve a bearer token to a userId, or null if invalid. */
-export async function resolveToken(kv: KVNamespace, token: string | undefined): Promise<string | null> {
+export async function resolveToken(
+  kv: KVNamespace,
+  token: string | undefined,
+): Promise<string | null> {
   if (!token) return null;
   return kv.get(kvKey.token(token));
 }

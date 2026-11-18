@@ -1,4 +1,11 @@
-import { MAX_RETRIES, HEALTH_API_BASE, HEALTH_USER, DATA_SOURCE_FAMILY, RECENT_SLEEP_CACHE_TTL_SECONDS, kvKey } from "./consts";
+import {
+  MAX_RETRIES,
+  HEALTH_API_BASE,
+  HEALTH_USER,
+  DATA_SOURCE_FAMILY,
+  RECENT_SLEEP_CACHE_TTL_SECONDS,
+  kvKey,
+} from "./consts";
 import { addDays, dateChunks, pooled } from "./utils";
 
 // --- Google Health API v4 response shapes (only the fields we read) ---
@@ -16,7 +23,12 @@ interface CivilDateTime {
 
 export interface SleepPoint {
   type?: "SLEEP_TYPE_UNSPECIFIED" | "CLASSIC" | "STAGES";
-  interval: { startTime: string; endTime: string; civilStartTime?: CivilDateTime; civilEndTime?: CivilDateTime };
+  interval: {
+    startTime: string;
+    endTime: string;
+    civilStartTime?: CivilDateTime;
+    civilEndTime?: CivilDateTime;
+  };
   metadata?: { mainSleep?: boolean; nap?: boolean };
   summary?: {
     minutesAsleep?: string;
@@ -34,9 +46,18 @@ export interface DataPoint {
     averageHeartRateVariabilityMilliseconds?: number;
     deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds?: number;
   };
-  dailyOxygenSaturation?: { date: GDate; averagePercentage?: number; lowerBoundPercentage?: number; upperBoundPercentage?: number };
+  dailyOxygenSaturation?: {
+    date: GDate;
+    averagePercentage?: number;
+    lowerBoundPercentage?: number;
+    upperBoundPercentage?: number;
+  };
   dailyRespiratoryRate?: { date: GDate; breathsPerMinute?: number };
-  dailySleepTemperatureDerivations?: { date: GDate; nightlyTemperatureCelsius?: number; baselineTemperatureCelsius?: number };
+  dailySleepTemperatureDerivations?: {
+    date: GDate;
+    nightlyTemperatureCelsius?: number;
+    baselineTemperatureCelsius?: number;
+  };
 }
 
 interface ListDataPointsResponse {
@@ -122,7 +143,9 @@ export function durationSeconds(d: string | undefined): number {
 /** Keep the first entry per date (list results are newest-first; one source per day is expected). */
 function dedupeByDate<T extends { date: string }>(rows: T[]): T[] {
   const seen = new Set<string>();
-  return rows.filter((r) => (seen.has(r.date) ? false : (seen.add(r.date), true))).sort((a, b) => a.date.localeCompare(b.date));
+  return rows
+    .filter((r) => (seen.has(r.date) ? false : (seen.add(r.date), true)))
+    .sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // --- API client: caching, retry/backoff, readable errors ---
@@ -183,7 +206,9 @@ export async function healthApi<T>(ctx: ApiCtx, req: ApiRequest): Promise<T> {
       },
       body: bodyStr,
     });
-    console.log(`[health] ${label} -> ${res.status}${attempt > 0 ? ` (attempt ${attempt + 1})` : ""}`);
+    console.log(
+      `[health] ${label} -> ${res.status}${attempt > 0 ? ` (attempt ${attempt + 1})` : ""}`,
+    );
 
     if (RETRYABLE.has(res.status) && attempt < MAX_RETRIES) {
       const retryAfter = parseInt(res.headers.get("Retry-After") ?? "", 10);
@@ -194,7 +219,9 @@ export async function healthApi<T>(ctx: ApiCtx, req: ApiRequest): Promise<T> {
     }
 
     if (!res.ok) {
-      throw new Error(`Google Health API ${req.path}: ${describeApiError(res.status, await res.text())}`);
+      throw new Error(
+        `Google Health API ${req.path}: ${describeApiError(res.status, await res.text())}`,
+      );
     }
 
     const data = (await res.json()) as T;
@@ -207,14 +234,24 @@ export async function healthApi<T>(ctx: ApiCtx, req: ApiRequest): Promise<T> {
 const dataPointsPath = (dataType: string) => `${HEALTH_USER}/dataTypes/${dataType}/dataPoints`;
 
 /** List all data points matching a filter, following nextPageToken. */
-async function listAll(ctx: ApiCtx, dataType: string, filter: string, pageSize: number, dataSourceFamily?: string): Promise<DataPoint[]> {
+async function listAll(
+  ctx: ApiCtx,
+  dataType: string,
+  filter: string,
+  pageSize: number,
+  dataSourceFamily?: string,
+): Promise<DataPoint[]> {
   const out: DataPoint[] = [];
   let pageToken: string | undefined;
   do {
     const query: Record<string, string> = { filter, pageSize: String(pageSize) };
     if (dataSourceFamily) query.dataSourceFamily = dataSourceFamily;
     if (pageToken) query.pageToken = pageToken;
-    const res = await healthApi<ListDataPointsResponse>(ctx, { method: "GET", path: dataPointsPath(dataType), query });
+    const res = await healthApi<ListDataPointsResponse>(ctx, {
+      method: "GET",
+      path: dataPointsPath(dataType),
+      query,
+    });
     out.push(...(res.dataPoints ?? []));
     pageToken = res.nextPageToken || undefined;
   } while (pageToken);
@@ -225,7 +262,13 @@ async function listAll(ctx: ApiCtx, dataType: string, filter: string, pageSize: 
  * Daily rollup over [start, endExclusive), split into chunks of at most
  * `maxDays` (14 for total-calories, 90 for most types), following nextPageToken.
  */
-async function dailyRollUp(ctx: ApiCtx, dataType: string, start: string, endExclusive: string, maxDays: number): Promise<RollupPoint[]> {
+async function dailyRollUp(
+  ctx: ApiCtx,
+  dataType: string,
+  start: string,
+  endExclusive: string,
+  maxDays: number,
+): Promise<RollupPoint[]> {
   const lastDay = addDays(endExclusive, -1);
   const chunks = dateChunks(start, lastDay, maxDays);
   const pages = await pooled(
@@ -240,7 +283,11 @@ async function dailyRollUp(ctx: ApiCtx, dataType: string, start: string, endExcl
           dataSourceFamily: DATA_SOURCE_FAMILY,
         };
         if (pageToken) body.pageToken = pageToken;
-        const res = await healthApi<DailyRollUpResponse>(ctx, { method: "POST", path: `${dataPointsPath(dataType)}:dailyRollUp`, body });
+        const res = await healthApi<DailyRollUpResponse>(ctx, {
+          method: "POST",
+          path: `${dataPointsPath(dataType)}:dailyRollUp`,
+          body,
+        });
         out.push(...(res.rollupDataPoints ?? []));
         pageToken = res.nextPageToken || undefined;
       } while (pageToken);
@@ -255,7 +302,10 @@ const dailyFilter = (field: string, start: string, endExclusive: string) =>
 
 // --- Normalizers (pure; unit-tested against fixtures) ---
 
-export function rollupValues(points: RollupPoint[], pick: (p: RollupPoint) => number | undefined): DailyValue[] {
+export function rollupValues(
+  points: RollupPoint[],
+  pick: (p: RollupPoint) => number | undefined,
+): DailyValue[] {
   const rows: DailyValue[] = [];
   for (const p of points) {
     const value = pick(p);
@@ -273,7 +323,10 @@ export function rollupHrZones(points: RollupPoint[]): HrZoneDay[] {
       date: fmtDate(p.civilStartTime.date),
       zones: zones
         .filter((z) => z.heartRateZone !== "HEART_RATE_ZONE_TYPE_UNSPECIFIED")
-        .map((z) => ({ name: z.heartRateZone.toLowerCase(), minutes: Math.round(durationSeconds(z.duration) / 60) })),
+        .map((z) => ({
+          name: z.heartRateZone.toLowerCase(),
+          minutes: Math.round(durationSeconds(z.duration) / 60),
+        })),
     });
   }
   return dedupeByDate(rows);
@@ -290,9 +343,13 @@ export function normalizeSleep(points: DataPoint[]): SleepNight[] {
   for (const dp of points) {
     const s = dp.sleep;
     if (!s?.interval) continue;
-    const date = s.interval.civilEndTime?.date ? fmtDate(s.interval.civilEndTime.date) : s.interval.endTime.slice(0, 10);
+    const date = s.interval.civilEndTime?.date
+      ? fmtDate(s.interval.civilEndTime.date)
+      : s.interval.endTime.slice(0, 10);
     const minutesAsleep = num(s.summary?.minutesAsleep) ?? 0;
-    const minutesInBed = Math.round((Date.parse(s.interval.endTime) - Date.parse(s.interval.startTime)) / 60000);
+    const minutesInBed = Math.round(
+      (Date.parse(s.interval.endTime) - Date.parse(s.interval.startTime)) / 60000,
+    );
     const minutesAwake = num(s.summary?.minutesAwake);
     // Google Health does not expose Fitbit's efficiency score; approximate it as
     // time asleep over (asleep + awake), falling back to time in bed.
@@ -345,7 +402,12 @@ export function normalizeSpO2(points: DataPoint[]): SpO2Day[] {
     const o = dp.dailyOxygenSaturation;
     const avg = num(o?.averagePercentage);
     if (!o || avg === undefined) continue;
-    rows.push({ date: fmtDate(o.date), avg, min: num(o.lowerBoundPercentage), max: num(o.upperBoundPercentage) });
+    rows.push({
+      date: fmtDate(o.date),
+      avg,
+      min: num(o.lowerBoundPercentage),
+      max: num(o.upperBoundPercentage),
+    });
   }
   return dedupeByDate(rows);
 }
@@ -400,23 +462,64 @@ export const fetchCurrentSleep: Fetcher<SleepNight[]> = async (ctx, start, end) 
   return [...settled, ...recent];
 };
 
-function dailyList<T>(dataType: string, field: string, normalize: (p: DataPoint[]) => T): Fetcher<T> {
+function dailyList<T>(
+  dataType: string,
+  field: string,
+  normalize: (p: DataPoint[]) => T,
+): Fetcher<T> {
   return async (ctx, start, end) =>
-    normalize(await listAll(ctx, dataType, dailyFilter(field, start, addDays(end, 1)), 1000, DATA_SOURCE_FAMILY));
+    normalize(
+      await listAll(
+        ctx,
+        dataType,
+        dailyFilter(field, start, addDays(end, 1)),
+        1000,
+        DATA_SOURCE_FAMILY,
+      ),
+    );
 }
 
-export const fetchRestingHeartRate = dailyList("daily-resting-heart-rate", "daily_resting_heart_rate", normalizeRestingHr);
-export const fetchHrv = dailyList("daily-heart-rate-variability", "daily_heart_rate_variability", normalizeHrv);
-export const fetchSpO2 = dailyList("daily-oxygen-saturation", "daily_oxygen_saturation", normalizeSpO2);
-export const fetchBreathingRate = dailyList("daily-respiratory-rate", "daily_respiratory_rate", normalizeBreathingRate);
-export const fetchSkinTemp = dailyList("daily-sleep-temperature-derivations", "daily_sleep_temperature_derivations", normalizeSkinTemp);
+export const fetchRestingHeartRate = dailyList(
+  "daily-resting-heart-rate",
+  "daily_resting_heart_rate",
+  normalizeRestingHr,
+);
+export const fetchHrv = dailyList(
+  "daily-heart-rate-variability",
+  "daily_heart_rate_variability",
+  normalizeHrv,
+);
+export const fetchSpO2 = dailyList(
+  "daily-oxygen-saturation",
+  "daily_oxygen_saturation",
+  normalizeSpO2,
+);
+export const fetchBreathingRate = dailyList(
+  "daily-respiratory-rate",
+  "daily_respiratory_rate",
+  normalizeBreathingRate,
+);
+export const fetchSkinTemp = dailyList(
+  "daily-sleep-temperature-derivations",
+  "daily_sleep_temperature_derivations",
+  normalizeSkinTemp,
+);
 
-function rollup<T>(dataType: string, maxDays: number, normalize: (p: RollupPoint[]) => T): Fetcher<T> {
-  return async (ctx, start, end) => normalize(await dailyRollUp(ctx, dataType, start, addDays(end, 1), maxDays));
+function rollup<T>(
+  dataType: string,
+  maxDays: number,
+  normalize: (p: RollupPoint[]) => T,
+): Fetcher<T> {
+  return async (ctx, start, end) =>
+    normalize(await dailyRollUp(ctx, dataType, start, addDays(end, 1), maxDays));
 }
 
-export const fetchSteps = rollup("steps", 90, (p) => rollupValues(p, (r) => num(r.steps?.countSum)));
-export const fetchFloors = rollup("floors", 90, (p) => rollupValues(p, (r) => num(r.floors?.countSum)));
+export const fetchSteps = rollup("steps", 90, (p) =>
+  rollupValues(p, (r) => num(r.steps?.countSum)),
+);
+export const fetchFloors = rollup("floors", 90, (p) =>
+  rollupValues(p, (r) => num(r.floors?.countSum)),
+);
 export const fetchDistanceKm = rollup("distance", 90, (p) =>
   rollupValues(p, (r) => {
     const mm = num(r.distance?.millimetersSum);

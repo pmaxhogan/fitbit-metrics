@@ -9,7 +9,10 @@ interface GoogleTokenResponse {
   scope?: string;
 }
 
-async function tokenRequest(env: Env, params: Record<string, string>): Promise<GoogleTokenResponse> {
+async function tokenRequest(
+  env: Env,
+  params: Record<string, string>,
+): Promise<GoogleTokenResponse> {
   const res = await fetch(GOOGLE_TOKEN_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -22,13 +25,19 @@ async function tokenRequest(env: Env, params: Record<string, string>): Promise<G
 
   if (!res.ok) {
     const body = await res.text();
-    const hint = body.includes("invalid_grant") ? " Re-authorize via /authorize?token=<your API token>." : "";
+    const hint = body.includes("invalid_grant")
+      ? " Re-authorize via /authorize?token=<your API token>."
+      : "";
     throw new Error(`Google token ${params.grant_type} failed (${res.status}): ${body}${hint}`);
   }
   return (await res.json()) as GoogleTokenResponse;
 }
 
-async function cacheAccessToken(env: Env, userId: string, data: GoogleTokenResponse): Promise<void> {
+async function cacheAccessToken(
+  env: Env,
+  userId: string,
+  data: GoogleTokenResponse,
+): Promise<void> {
   const ttl = (data.expires_in ?? 3600) - ACCESS_TOKEN_SAFETY_SECONDS;
   // KV requires expirationTtl >= 60
   if (ttl >= 60) {
@@ -45,7 +54,10 @@ export async function getAccessToken(env: Env, userId: string): Promise<string> 
     throw new Error("No refresh token in KV. Authorize via /authorize first.");
   }
 
-  const data = await tokenRequest(env, { grant_type: "refresh_token", refresh_token: refreshToken });
+  const data = await tokenRequest(env, {
+    grant_type: "refresh_token",
+    refresh_token: refreshToken,
+  });
   if (data.refresh_token) {
     await env.FITBIT_KV.put(kvKey.refreshToken(userId), data.refresh_token);
   }
@@ -54,8 +66,17 @@ export async function getAccessToken(env: Env, userId: string): Promise<string> 
 }
 
 /** Exchange an authorization code; stores the refresh token and returns the access token. */
-export async function exchangeAuthCode(env: Env, userId: string, code: string, redirectUri: string): Promise<string> {
-  const data = await tokenRequest(env, { grant_type: "authorization_code", code, redirect_uri: redirectUri });
+export async function exchangeAuthCode(
+  env: Env,
+  userId: string,
+  code: string,
+  redirectUri: string,
+): Promise<string> {
+  const data = await tokenRequest(env, {
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+  });
   if (!data.refresh_token) {
     throw new Error(
       "Google did not return a refresh token. Revoke the app's access at https://myaccount.google.com/permissions and retry.",
